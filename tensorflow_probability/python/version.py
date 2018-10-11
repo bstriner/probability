@@ -16,7 +16,7 @@
 
 # We follow Semantic Versioning (https://semver.org/)
 _MAJOR_VERSION = '0'
-_MINOR_VERSION = '4'
+_MINOR_VERSION = '5'
 _PATCH_VERSION = '0'
 
 # When building releases, we can update this value on the release branch to
@@ -27,9 +27,9 @@ _PATCH_VERSION = '0'
 _VERSION_SUFFIX = 'dev'
 
 # Example, '0.4.0.dev'
-__version__ = '.'.join([
+__version__ = '.'.join(s for s in [
     _MAJOR_VERSION,
     _MINOR_VERSION,
     _PATCH_VERSION,
     _VERSION_SUFFIX,
-])
+] if s)  # Prevent trailing dot when version suffix is empty.

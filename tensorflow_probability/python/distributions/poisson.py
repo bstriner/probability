@@ -19,15 +19,18 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow_probability.python.distributions import distribution
+from tensorflow_probability.python.internal import distribution_util
+from tensorflow_probability.python.internal import dtype_util
+from tensorflow_probability.python.internal import reparameterization
 from tensorflow.python.framework import tensor_shape
-from tensorflow.python.ops.distributions import util as distribution_util
 
 __all__ = [
     "Poisson",
 ]
 
 
-class Poisson(tf.distributions.Distribution):
+class Poisson(distribution.Distribution):
   """Poisson distribution.
 
   The Poisson distribution is parameterized by an event `rate` parameter.
@@ -78,7 +81,10 @@ class Poisson(tf.distributions.Distribution):
       if (rate is None) == (log_rate is None):
         raise ValueError("Must specify exactly one of `rate` and `log_rate`.")
       elif log_rate is None:
-        rate = tf.convert_to_tensor(rate, name="rate")
+        rate = tf.convert_to_tensor(
+            rate,
+            name="rate",
+            dtype=dtype_util.common_dtype([rate], preferred_dtype=tf.float32))
         if not rate.dtype.is_floating:
           raise TypeError("rate.dtype ({}) is a not a float-type.".format(
               rate.dtype.name))
@@ -87,7 +93,10 @@ class Poisson(tf.distributions.Distribution):
           self._rate = tf.identity(rate, name="rate")
           self._log_rate = tf.log(rate, name="log_rate")
       else:
-        log_rate = tf.convert_to_tensor(log_rate, name="log_rate")
+        log_rate = tf.convert_to_tensor(
+            log_rate,
+            name="log_rate",
+            dtype=dtype_util.common_dtype([log_rate], tf.float32))
         if not log_rate.dtype.is_floating:
           raise TypeError("log_rate.dtype ({}) is a not a float-type.".format(
               log_rate.dtype.name))
@@ -95,7 +104,7 @@ class Poisson(tf.distributions.Distribution):
         self._log_rate = tf.convert_to_tensor(log_rate, name="log_rate")
     super(Poisson, self).__init__(
         dtype=self._rate.dtype,
-        reparameterization_type=tf.distributions.NOT_REPARAMETERIZED,
+        reparameterization_type=reparameterization.NOT_REPARAMETERIZED,
         validate_args=validate_args,
         allow_nan_stats=allow_nan_stats,
         parameters=parameters,
