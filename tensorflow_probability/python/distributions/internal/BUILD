@@ -15,6 +15,8 @@
 # Description:
 #   Internal helper libraries for distributions.
 
+# [internal] load python3.bzl
+
 licenses(["notice"])  # Apache 2.0
 
 package(
@@ -29,6 +31,10 @@ py_library(
     name = "internal",
     srcs = ["__init__.py"],
     srcs_version = "PY2AND3",
+    deps = [
+        ":moving_stats",
+        ":statistical_testing",
+    ],
 )
 
 py_library(
@@ -39,23 +45,28 @@ py_library(
     ],
 )
 
+py_test(
+    name = "moving_stats_test",
+    size = "small",
+    srcs = ["moving_stats_test.py"],
+    tags = [
+        "nomsan",  # disable to avoid false positives from scipy.
+    ],
+    deps = [
+        ":moving_stats",
+        # numpy dep,
+        # tensorflow dep,
+    ],
+)
+
 py_library(
     name = "statistical_testing",
     srcs = ["statistical_testing.py"],
     deps = [
         # tensorflow dep,
-    ],
-)
-
-py_test(
-    name = "moving_stats_test",
-    size = "small",
-    srcs = ["moving_stats_test.py"],
-    tags = ["nomsan"],  # disable to avoid false positives from scipy.
-    deps = [
-        ":moving_stats",
-        # numpy dep,
-        # tensorflow dep,
+        "//tensorflow_probability/python/distributions:seed_stream",
+        "//tensorflow_probability/python/internal:distribution_util",
+        "//tensorflow_probability/python/internal:dtype_util",
     ],
 )
 
@@ -66,8 +77,10 @@ py_test(
     shard_count = 4,
     deps = [
         ":statistical_testing",
+        # absl/testing:parameterized dep,
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/internal:test_util",
     ],
 )
 
@@ -108,5 +121,22 @@ py_test(
         ":correlation_matrix_volumes_py",
         ":statistical_testing",
         # numpy dep,
+    ],
+)
+
+py_library(
+    name = "slicing",
+    srcs = ["slicing.py"],
+    deps = [
+        # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "slicing_test",
+    srcs = ["slicing_test.py"],
+    deps = [
+        ":slicing",
+        # tensorflow dep,
     ],
 )

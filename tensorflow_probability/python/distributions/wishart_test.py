@@ -23,8 +23,9 @@ import numpy as np
 from scipy import linalg
 import tensorflow as tf
 import tensorflow_probability as tfp
-from tensorflow.python.framework import errors_impl
-from tensorflow.python.framework import test_util
+
+from tensorflow_probability.python.internal import test_util as tfp_test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 tfd = tfp.distributions
 
@@ -86,7 +87,8 @@ class WishartTest(tf.test.TestCase):
     self.assertAllEqual([3], self.evaluate(wish.batch_shape_tensor()))
     self.assertAllEqual([4, 3, 2, 2], wish.sample(sample_shape=(4,)).shape)
     self.assertAllEqual([4, 3, 2, 2],
-                        self.evaluate(tf.shape(wish.sample(sample_shape=(4,)))))
+                        self.evaluate(
+                            tf.shape(input=wish.sample(sample_shape=(4,)))))
 
   def testMean(self):
     scale = make_pd(1., 2)
@@ -135,25 +137,26 @@ class WishartTest(tf.test.TestCase):
       return
     scale = make_pd(1., 2)
     df = 4
+    seed = tfp_test_util.test_seed()
 
     chol_w = tfd.Wishart(
         df, scale_tril=chol(scale), input_output_cholesky=False)
 
-    x = self.evaluate(chol_w.sample(1, seed=42))
+    x = self.evaluate(chol_w.sample(1, seed=seed))
     chol_x = [chol(x[0])]
 
     full_w = tfd.Wishart(df, scale, input_output_cholesky=False)
-    self.assertAllClose(x, self.evaluate(full_w.sample(1, seed=42)))
+    self.assertAllClose(x, self.evaluate(full_w.sample(1, seed=seed)))
 
     chol_w_chol = tfd.Wishart(
         df, scale_tril=chol(scale), input_output_cholesky=True)
-    self.assertAllClose(chol_x, self.evaluate(chol_w_chol.sample(1, seed=42)))
-    eigen_values = tf.matrix_diag_part(chol_w_chol.sample(1000, seed=42))
+    self.assertAllClose(chol_x, self.evaluate(chol_w_chol.sample(1, seed=seed)))
+    eigen_values = tf.linalg.diag_part(chol_w_chol.sample(1000, seed=seed))
     np.testing.assert_array_less(0., self.evaluate(eigen_values))
 
     full_w_chol = tfd.Wishart(df, scale=scale, input_output_cholesky=True)
-    self.assertAllClose(chol_x, self.evaluate(full_w_chol.sample(1, seed=42)))
-    eigen_values = tf.matrix_diag_part(full_w_chol.sample(1000, seed=42))
+    self.assertAllClose(chol_x, self.evaluate(full_w_chol.sample(1, seed=seed)))
+    eigen_values = tf.linalg.diag_part(full_w_chol.sample(1000, seed=seed))
     np.testing.assert_array_less(0., self.evaluate(eigen_values))
 
   def testSample(self):
@@ -161,10 +164,10 @@ class WishartTest(tf.test.TestCase):
     df = 4.
     chol_w = tfd.Wishart(
         df=df, scale_tril=chol(make_pd(1., 3)), input_output_cholesky=False)
-    x = chol_w.sample(10000, seed=42)
-    self.assertAllEqual((10000, 3, 3), x.get_shape())
+    x = chol_w.sample(10000, seed=tfp_test_util.test_seed(hardcoded_seed=42))
+    self.assertAllEqual((10000, 3, 3), x.shape)
 
-    moment1_estimate = self.evaluate(tf.reduce_mean(x, reduction_indices=[0]))
+    moment1_estimate = self.evaluate(tf.reduce_mean(input_tensor=x, axis=[0]))
     self.assertAllClose(
         self.evaluate(chol_w.mean()), moment1_estimate, rtol=0.05)
 
@@ -172,7 +175,7 @@ class WishartTest(tf.test.TestCase):
     # because Wishart.Variance is the diagonal of the Wishart covariance
     # matrix.
     variance_estimate = self.evaluate(
-        tf.reduce_mean(tf.square(x), reduction_indices=[0]) -
+        tf.reduce_mean(input_tensor=tf.square(x), axis=[0]) -
         tf.square(moment1_estimate))
     self.assertAllClose(
         self.evaluate(chol_w.variance()), variance_estimate, rtol=0.05)
@@ -181,22 +184,23 @@ class WishartTest(tf.test.TestCase):
   def testSampleMultipleTimes(self):
     df = 4.
     n_val = 100
+    seed = tfp_test_util.test_seed()
 
-    tf.set_random_seed(654321)
+    tf.compat.v1.set_random_seed(seed)
     chol_w1 = tfd.Wishart(
         df=df,
         scale_tril=chol(make_pd(1., 3)),
         input_output_cholesky=False,
         name="wishart1")
-    samples1 = self.evaluate(chol_w1.sample(n_val, seed=123456))
+    samples1 = self.evaluate(chol_w1.sample(n_val, seed=seed))
 
-    tf.set_random_seed(654321)
+    tf.compat.v1.set_random_seed(seed)
     chol_w2 = tfd.Wishart(
         df=df,
         scale_tril=chol(make_pd(1., 3)),
         input_output_cholesky=False,
         name="wishart2")
-    samples2 = self.evaluate(chol_w2.sample(n_val, seed=123456))
+    samples2 = self.evaluate(chol_w2.sample(n_val, seed=seed))
 
     self.assertAllClose(samples1, samples2)
 
@@ -257,7 +261,7 @@ class WishartTest(tf.test.TestCase):
           np.reshape(np.exp(log_prob), (2, 2)),
           self.evaluate(w.prob(np.reshape(x, (2, 2, 2, 2)))))
       self.assertAllEqual((2, 2),
-                          w.log_prob(np.reshape(x, (2, 2, 2, 2))).get_shape())
+                          w.log_prob(np.reshape(x, (2, 2, 2, 2))).shape)
 
     for w in (tfd.Wishart(
         df=4, scale_tril=chol_x[0], input_output_cholesky=True),
@@ -273,7 +277,7 @@ class WishartTest(tf.test.TestCase):
           np.reshape(np.exp(log_prob), (2, 2)),
           self.evaluate(w.prob(np.reshape(chol_x, (2, 2, 2, 2)))))
       self.assertAllEqual((2, 2),
-                          w.log_prob(np.reshape(x, (2, 2, 2, 2))).get_shape())
+                          w.log_prob(np.reshape(x, (2, 2, 2, 2))).shape)
 
   def testBatchShape(self):
     scale = make_pd(1., 2)
@@ -287,12 +291,12 @@ class WishartTest(tf.test.TestCase):
     self.assertAllEqual([2], w.batch_shape)
     self.assertAllEqual([2], self.evaluate(w.batch_shape_tensor()))
 
-    scale_deferred = tf.placeholder_with_default(
+    scale_deferred = tf.compat.v1.placeholder_with_default(
         input=chol_scale, shape=chol_scale.shape)
     w = tfd.Wishart(df=4, scale_tril=scale_deferred)
     self.assertAllEqual([], self.evaluate(w.batch_shape_tensor()))
 
-    scale_deferred = tf.placeholder_with_default(
+    scale_deferred = tf.compat.v1.placeholder_with_default(
         input=np.array([chol_scale, chol_scale]), shape=None)
     w = tfd.Wishart(df=4, scale_tril=scale_deferred)
     self.assertAllEqual([2], self.evaluate(w.batch_shape_tensor()))
@@ -309,12 +313,12 @@ class WishartTest(tf.test.TestCase):
     self.assertAllEqual([2, 2], w.event_shape)
     self.assertAllEqual([2, 2], self.evaluate(w.event_shape_tensor()))
 
-    scale_deferred = tf.placeholder_with_default(
+    scale_deferred = tf.compat.v1.placeholder_with_default(
         input=chol_scale, shape=chol_scale.shape)
     w = tfd.Wishart(df=4, scale_tril=scale_deferred)
     self.assertAllEqual([2, 2], self.evaluate(w.event_shape_tensor()))
 
-    scale_deferred = tf.placeholder_with_default(
+    scale_deferred = tf.compat.v1.placeholder_with_default(
         input=np.array([chol_scale, chol_scale]), shape=None)
     w = tfd.Wishart(df=4, scale_tril=scale_deferred)
     self.assertAllEqual([2, 2], self.evaluate(w.event_shape_tensor()))
@@ -322,13 +326,13 @@ class WishartTest(tf.test.TestCase):
   def testValidateArgs(self):
     x = make_pd(1., 3)
     chol_scale = chol(x)
-    df_deferred = tf.placeholder_with_default(input=2., shape=None)
-    chol_scale_deferred = tf.placeholder_with_default(
+    df_deferred = tf.compat.v1.placeholder_with_default(input=2., shape=None)
+    chol_scale_deferred = tf.compat.v1.placeholder_with_default(
         input=np.float32(chol_scale), shape=chol_scale.shape)
 
     # In eager mode, these checks are done statically and hence
     # ValueError is returned on object construction.
-    error_type = errors_impl.InvalidArgumentError
+    error_type = tf.errors.InvalidArgumentError
     if tf.executing_eagerly():
       error_type = ValueError
 
@@ -339,8 +343,8 @@ class WishartTest(tf.test.TestCase):
       self.evaluate(chol_w.log_prob(np.asarray(x, dtype=np.float32)))
 
     with self.assertRaisesOpError("Cholesky decomposition was not successful"):
-      df_deferred = tf.placeholder_with_default(input=2., shape=None)
-      chol_scale_deferred = tf.placeholder_with_default(
+      df_deferred = tf.compat.v1.placeholder_with_default(input=2., shape=None)
+      chol_scale_deferred = tf.compat.v1.placeholder_with_default(
           input=np.ones([3, 3], dtype=np.float32), shape=[3, 3])
       chol_w = tfd.Wishart(df=df_deferred, scale=chol_scale_deferred)
       # np.ones((3, 3)) is not positive, definite.
@@ -354,14 +358,14 @@ class WishartTest(tf.test.TestCase):
       self.evaluate(chol_w.scale())
 
     # Ensure no assertions.
-    df_deferred = tf.placeholder_with_default(input=4., shape=None)
-    chol_scale_deferred = tf.placeholder_with_default(
+    df_deferred = tf.compat.v1.placeholder_with_default(input=4., shape=None)
+    chol_scale_deferred = tf.compat.v1.placeholder_with_default(
         input=np.float32(chol_scale), shape=chol_scale.shape)
     chol_w = tfd.Wishart(
         df=df_deferred, scale_tril=chol_scale_deferred, validate_args=False)
     self.evaluate(chol_w.log_prob(np.asarray(x, dtype=np.float32)))
 
-    chol_scale_deferred = tf.placeholder_with_default(
+    chol_scale_deferred = tf.compat.v1.placeholder_with_default(
         input=np.ones([3, 3], dtype=np.float32), shape=[3, 3])
     chol_w = tfd.Wishart(
         df=df_deferred, scale_tril=chol_scale_deferred, validate_args=False)
@@ -397,11 +401,16 @@ class WishartTest(tf.test.TestCase):
     scale = np.reshape(np.concatenate([scale, scale, scale], axis=0),
                        batch_shape + [dims, dims])
     wishart = tfd.Wishart(df=5, scale=scale)
-    x = wishart.sample(sample_shape, seed=42)
+    x = wishart.sample(sample_shape, seed=tfp_test_util.test_seed())
     x_ = self.evaluate(x)
     expected_shape = sample_shape + batch_shape + [dims, dims]
     self.assertAllEqual(expected_shape, x.shape)
     self.assertAllEqual(expected_shape, x_.shape)
+
+  def testStaticAssertNonFlatDfDoesntRaise(self):
+    # Check we don't get ValueError: The truth value of an array with more than
+    # one element is ambiguous. Use a.any() or a.all()
+    tfd.Wishart(df=[[2., 2]], scale=make_pd(1., 2), validate_args=True)
 
 
 if __name__ == "__main__":

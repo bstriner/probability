@@ -23,17 +23,16 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow_probability.python.internal import test_util
-
-from tensorflow.python.framework import test_util as tf_test_util
+from tensorflow_probability.python.internal import test_util as tfp_test_util
 
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 rng = np.random.RandomState(0)
 
 
-@tf_test_util.run_all_in_graph_and_eager_modes
-class VectorDiffeomixtureTest(test_util.VectorDistributionTestHelpers,
+@test_util.run_all_in_graph_and_eager_modes
+class VectorDiffeomixtureTest(tfp_test_util.VectorDistributionTestHelpers,
                               tf.test.TestCase):
   """Tests the VectorDiffeomixture distribution."""
 

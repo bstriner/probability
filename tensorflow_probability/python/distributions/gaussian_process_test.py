@@ -23,8 +23,7 @@ import tensorflow as tf
 from tensorflow_probability.python import distributions as tfd
 from tensorflow_probability.python import positive_semidefinite_kernels as psd_kernels
 
-from tensorflow.python.framework import tensor_util
-from tensorflow.python.framework import test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 class _GaussianProcessTest(object):
@@ -42,9 +41,10 @@ class _GaussianProcessTest(object):
     batched_index_points = np.stack([index_points]*6)
     # ==> shape = [6, 25, 2]
     if not self.is_static:
-      amplitude = tf.placeholder_with_default(amplitude, shape=None)
-      length_scale = tf.placeholder_with_default(length_scale, shape=None)
-      batched_index_points = tf.placeholder_with_default(
+      amplitude = tf.compat.v1.placeholder_with_default(amplitude, shape=None)
+      length_scale = tf.compat.v1.placeholder_with_default(
+          length_scale, shape=None)
+      batched_index_points = tf.compat.v1.placeholder_with_default(
           batched_index_points, shape=None)
     kernel = psd_kernels.ExponentiatedQuadratic(amplitude, length_scale)
     gp = tfd.GaussianProcess(
@@ -76,7 +76,7 @@ class _GaussianProcessTest(object):
       self.assertIsNone(samples.shape.ndims)
       self.assertIsNone(gp.batch_shape.ndims)
       self.assertEqual(gp.event_shape.ndims, 1)
-      self.assertIsNone(gp.event_shape.dims[0].value)
+      self.assertIsNone(tf.compat.dimension_value(gp.event_shape.dims[0]))
 
   def testVarianceAndCovarianceMatrix(self):
     amp = np.float64(.5)
@@ -124,8 +124,10 @@ class _GaussianProcessTest(object):
 
     # ==> shape = [6, 25, 2]
     if not self.is_static:
-      index_points_1 = tf.placeholder_with_default(index_points_1, shape=None)
-      index_points_2 = tf.placeholder_with_default(index_points_2, shape=None)
+      index_points_1 = tf.compat.v1.placeholder_with_default(
+          index_points_1, shape=None)
+      index_points_2 = tf.compat.v1.placeholder_with_default(
+          index_points_2, shape=None)
 
     mean_fn = lambda x: np.array([0.], np.float32)
     kernel_1 = psd_kernels.ExponentiatedQuadratic()
@@ -149,8 +151,7 @@ class _GaussianProcessTest(object):
       self.assertAllEqual(gp1.index_points, index_points_1)
       self.assertAllEqual(gp2.index_points, index_points_2)
       self.assertAllEqual(
-          tensor_util.constant_value(gp1.jitter),
-          tensor_util.constant_value(gp2.jitter))
+          tf.get_static_value(gp1.jitter), tf.get_static_value(gp2.jitter))
     else:
       self.assertAllEqual(
           self.evaluate(gp1.batch_shape_tensor()),

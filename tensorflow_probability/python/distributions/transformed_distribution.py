@@ -21,11 +21,9 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from tensorflow_probability.python import bijectors as tfb
 from tensorflow_probability.python.distributions import distribution as distribution_lib
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow.python.framework import tensor_util
-from tensorflow.python.ops import control_flow_ops
 
 __all__ = [
     "TransformedDistribution",
@@ -39,7 +37,7 @@ __all__ = [
 
 def _static_value(x):
   """Returns the static value of a `Tensor` or `None`."""
-  return tensor_util.constant_value(tf.convert_to_tensor(x))
+  return tf.get_static_value(tf.convert_to_tensor(value=x))
 
 
 def _logical_and(*args):
@@ -51,7 +49,7 @@ def _logical_and(*args):
     return tf.constant(True)
   if len(args) == 2:
     return tf.logical_and(*args)
-  return tf.reduce_all(args)
+  return tf.reduce_all(input_tensor=args)
 
 
 def _logical_equal(x, y):
@@ -93,20 +91,20 @@ def _pick_scalar_condition(pred, cond_true, cond_false):
 def _ones_like(x):
   """Convenience function attempts to statically construct `ones_like`."""
   # Should only be used for small vectors.
-  if x.get_shape().is_fully_defined():
-    return tf.ones(x.get_shape().as_list(), dtype=x.dtype)
+  if x.shape.is_fully_defined():
+    return tf.ones(x.shape.as_list(), dtype=x.dtype)
   return tf.ones_like(x)
 
 
 def _ndims_from_shape(shape):
   """Returns `Tensor`'s `rank` implied by a `Tensor` shape."""
-  if shape.get_shape().ndims not in (None, 1):
+  if shape.shape.ndims not in (None, 1):
     raise ValueError("input is not a valid shape: not 1D")
   if not shape.dtype.is_integer:
     raise TypeError("input is not a valid shape: wrong dtype")
-  if shape.get_shape().is_fully_defined():
-    return tf.constant(shape.get_shape().as_list()[0])
-  return tf.shape(shape)[0]
+  if shape.shape.is_fully_defined():
+    return tf.constant(shape.shape.as_list()[0])
+  return tf.shape(input=shape)[0]
 
 
 def _is_scalar_from_shape(shape):
@@ -162,7 +160,7 @@ class TransformedDistribution(distribution_lib.Distribution):
   distribution:
 
   ```python
-  ds = tf.contrib.distributions
+  ds = tfp.distributions
   log_normal = ds.TransformedDistribution(
     distribution=ds.Normal(loc=0., scale=1.),
     bijector=ds.bijectors.Exp(),
@@ -172,7 +170,7 @@ class TransformedDistribution(distribution_lib.Distribution):
   A `LogNormal` made from callables:
 
   ```python
-  ds = tf.contrib.distributions
+  ds = tfp.distributions
   log_normal = ds.TransformedDistribution(
     distribution=ds.Normal(loc=0., scale=1.),
     bijector=ds.bijectors.Inline(
@@ -186,7 +184,7 @@ class TransformedDistribution(distribution_lib.Distribution):
   Another example constructing a Normal from a StandardNormal:
 
   ```python
-  ds = tf.contrib.distributions
+  ds = tfp.distributions
   normal = ds.TransformedDistribution(
     distribution=ds.Normal(loc=0., scale=1.),
     bijector=ds.bijectors.Affine(
@@ -204,7 +202,7 @@ class TransformedDistribution(distribution_lib.Distribution):
   multivariate Normal as a `TransformedDistribution`.
 
   ```python
-  ds = tf.contrib.distributions
+  ds = tfp.distributions
   # We will create two MVNs with batch_shape = event_shape = 2.
   mean = [[-1., 0],      # batch:0
           [0., 1]]       # batch:1
@@ -225,10 +223,11 @@ class TransformedDistribution(distribution_lib.Distribution):
 
   def __init__(self,
                distribution,
-               bijector=None,
+               bijector,
                batch_shape=None,
                event_shape=None,
                validate_args=False,
+               parameters=None,
                name=None):
     """Construct a Transformed Distribution.
 
@@ -236,7 +235,7 @@ class TransformedDistribution(distribution_lib.Distribution):
       distribution: The base distribution instance to transform. Typically an
         instance of `Distribution`.
       bijector: The object responsible for calculating the transformation.
-        Typically an instance of `Bijector`. `None` means `Identity()`.
+        Typically an instance of `Bijector`.
       batch_shape: `integer` vector `Tensor` which overrides `distribution`
         `batch_shape`; valid only if `distribution.is_scalar_batch()`.
       event_shape: `integer` vector `Tensor` which overrides `distribution`
@@ -245,19 +244,19 @@ class TransformedDistribution(distribution_lib.Distribution):
         parameters are checked for validity despite possibly degrading runtime
         performance. When `False` invalid inputs may silently render incorrect
         outputs.
+      parameters: Locals dict captured by subclass constructor, to be used for
+        copy/slice re-instantiation operations.
       name: Python `str` name prefixed to Ops created by this class. Default:
         `bijector.name + distribution.name`.
     """
-    parameters = dict(locals())
+    parameters = dict(locals()) if parameters is None else parameters
     name = name or (("" if bijector is None else bijector.name) +
                     distribution.name)
-    with tf.name_scope(name, values=[event_shape, batch_shape]) as name:
+    with tf.compat.v1.name_scope(
+        name, values=[event_shape, batch_shape]) as name:
       # For convenience we define some handy constants.
       self._zero = tf.constant(0, dtype=tf.int32, name="zero")
       self._empty = tf.constant([], dtype=tf.int32, name="empty")
-
-      if bijector is None:
-        bijector = tfb.Identity(validate_args=validate_args)
 
       # We will keep track of a static and dynamic version of
       # self._is_{batch,event}_override. This way we can do more prior to graph
@@ -269,8 +268,8 @@ class TransformedDistribution(distribution_lib.Distribution):
       self._is_batch_override = _logical_not(_logical_equal(
           _ndims_from_shape(self._override_batch_shape), self._zero))
       self._is_maybe_batch_override = bool(
-          tensor_util.constant_value(self._override_batch_shape) is None or
-          tensor_util.constant_value(self._override_batch_shape).size != 0)
+          tf.get_static_value(self._override_batch_shape) is None or
+          tf.get_static_value(self._override_batch_shape).size != 0)
 
       self._override_event_shape = self._maybe_validate_shape_override(
           event_shape, distribution.is_scalar_event(), validate_args,
@@ -278,8 +277,8 @@ class TransformedDistribution(distribution_lib.Distribution):
       self._is_event_override = _logical_not(_logical_equal(
           _ndims_from_shape(self._override_event_shape), self._zero))
       self._is_maybe_event_override = bool(
-          tensor_util.constant_value(self._override_event_shape) is None or
-          tensor_util.constant_value(self._override_event_shape).size != 0)
+          tf.get_static_value(self._override_event_shape) is None or
+          tf.get_static_value(self._override_event_shape).size != 0)
 
       # To convert a scalar distribution into a multivariate distribution we
       # will draw dims from the sample dims, which are otherwise iid. This is
@@ -385,7 +384,7 @@ class TransformedDistribution(distribution_lib.Distribution):
     # works).
     with self._name_scope(name, values=[sample_shape]):
       sample_shape = tf.convert_to_tensor(
-          sample_shape, dtype=tf.int32, name="sample_shape")
+          value=sample_shape, dtype=tf.int32, name="sample_shape")
       sample_shape, n = self._expand_sample_shape_to_vector(
           sample_shape, "sample_shape")
 
@@ -396,7 +395,7 @@ class TransformedDistribution(distribution_lib.Distribution):
 
       # Next, we reshape `x` into its final form. We do this prior to the call
       # to the bijector to ensure that the bijector caching works.
-      batch_event_shape = tf.shape(x)[1:]
+      batch_event_shape = tf.shape(input=x)[1:]
       final_shape = tf.concat([sample_shape, batch_event_shape], 0)
       x = tf.reshape(x, final_shape)
 
@@ -421,23 +420,27 @@ class TransformedDistribution(distribution_lib.Distribution):
     lp_on_fibers = [
         self._finish_log_prob_for_one_fiber(y, x_i, ildj_i, event_ndims)
         for x_i, ildj_i in zip(x, ildj)]
-    return tf.reduce_logsumexp(tf.stack(lp_on_fibers), axis=0)
+    return tf.reduce_logsumexp(input_tensor=tf.stack(lp_on_fibers), axis=0)
 
   def _finish_log_prob_for_one_fiber(self, y, x, ildj, event_ndims):
     """Finish computation of log_prob on one element of the inverse image."""
     x = self._maybe_rotate_dims(x, rotate_right=True)
     log_prob = self.distribution.log_prob(x)
     if self._is_maybe_event_override:
-      log_prob = tf.reduce_sum(log_prob, self._reduce_event_indices)
+      log_prob = tf.reduce_sum(
+          input_tensor=log_prob, axis=self._reduce_event_indices)
     log_prob += tf.cast(ildj, log_prob.dtype)
     if self._is_maybe_event_override and isinstance(event_ndims, int):
       log_prob.set_shape(
           tf.broadcast_static_shape(
-              y.get_shape().with_rank_at_least(1)[:-event_ndims],
+              y.shape.with_rank_at_least(1)[:-event_ndims],
               self.batch_shape))
     return log_prob
 
   def _prob(self, y):
+    if not hasattr(self.distribution, "_prob"):
+      return tf.exp(self.log_prob(y))
+
     x = self.bijector.inverse(y)
     event_ndims = self._maybe_get_static_event_ndims()
     ildj = self.bijector.inverse_log_det_jacobian(y, event_ndims=event_ndims)
@@ -454,12 +457,12 @@ class TransformedDistribution(distribution_lib.Distribution):
     x = self._maybe_rotate_dims(x, rotate_right=True)
     prob = self.distribution.prob(x)
     if self._is_maybe_event_override:
-      prob = tf.reduce_prod(prob, self._reduce_event_indices)
+      prob = tf.reduce_prod(input_tensor=prob, axis=self._reduce_event_indices)
     prob *= tf.exp(tf.cast(ildj, prob.dtype))
     if self._is_maybe_event_override and isinstance(event_ndims, int):
       prob.set_shape(
           tf.broadcast_static_shape(
-              y.get_shape().with_rank_at_least(1)[:-event_ndims],
+              y.shape.with_rank_at_least(1)[:-event_ndims],
               self.batch_shape))
     return prob
 
@@ -516,6 +519,36 @@ class TransformedDistribution(distribution_lib.Distribution):
     inv_cdf = self.distribution.quantile(value)
     return self.bijector.forward(inv_cdf)
 
+  def _mean(self):
+    if not self.bijector.is_constant_jacobian:
+      raise NotImplementedError("mean is not implemented for non-affine "
+                                "bijectors")
+
+    x = self.distribution.mean()
+
+    if self._is_maybe_batch_override or self._is_maybe_event_override:
+      # A batch (respectively event) shape override is only allowed if the batch
+      # (event) shape of the base distribution is [], so concatenating all the
+      # shapes does the right thing.
+      new_shape = tf.concat([
+          _ones_like(self._override_batch_shape),
+          self.distribution.batch_shape_tensor(),
+          _ones_like(self._override_event_shape),
+          self.distribution.event_shape_tensor(),
+      ], 0)
+      x = tf.reshape(x, new_shape)
+      new_shape = tf.concat(
+          [self.batch_shape_tensor(),
+           self.event_shape_tensor()], 0)
+      x = tf.broadcast_to(x, new_shape)
+
+    y = self.bijector.forward(x)
+
+    sample_shape = tf.convert_to_tensor(
+        value=[], dtype=tf.int32, name="sample_shape")
+    y = self._set_sample_static_shape(y, sample_shape)
+    return y
+
   def _entropy(self):
     if not self.bijector.is_constant_jacobian:
       raise NotImplementedError("entropy is not implemented")
@@ -532,8 +565,9 @@ class TransformedDistribution(distribution_lib.Distribution):
     if self._is_maybe_event_override:
       # H[X] = sum_i H[X_i] if X_i are mutually independent.
       # This means that a reduce_sum is a simple rescaling.
-      entropy *= tf.cast(tf.reduce_prod(self._override_event_shape),
-                         dtype=entropy.dtype.base_dtype)
+      entropy *= tf.cast(
+          tf.reduce_prod(input_tensor=self._override_event_shape),
+          dtype=entropy.dtype.base_dtype)
     if self._is_maybe_batch_override:
       new_shape = tf.concat([
           _ones_like(self._override_batch_shape),
@@ -550,8 +584,9 @@ class TransformedDistribution(distribution_lib.Distribution):
             [self.batch_shape_tensor(), self.event_shape_tensor()],
             0),
         dtype=self.dtype)
-    event_ndims = (self.event_shape.ndims if self.event_shape.ndims is not None
-                   else tf.size(self.event_shape_tensor()))
+    event_ndims = (
+        self.event_shape.ndims if self.event_shape.ndims is not None else
+        tf.size(input=self.event_shape_tensor()))
     ildj = self.bijector.inverse_log_det_jacobian(
         dummy, event_ndims=event_ndims)
 
@@ -565,64 +600,68 @@ class TransformedDistribution(distribution_lib.Distribution):
     if override_shape is None:
       override_shape = []
 
-    override_shape = tf.convert_to_tensor(override_shape, dtype=tf.int32,
-                                          name=name)
+    override_shape = tf.convert_to_tensor(
+        value=override_shape, dtype=tf.int32, name=name)
 
     if not override_shape.dtype.is_integer:
       raise TypeError("shape override must be an integer")
 
     override_is_scalar = _is_scalar_from_shape(override_shape)
-    if tensor_util.constant_value(override_is_scalar):
+    if tf.get_static_value(override_is_scalar):
       return self._empty
 
     dynamic_assertions = []
 
-    if override_shape.get_shape().ndims is not None:
-      if override_shape.get_shape().ndims != 1:
+    if override_shape.shape.ndims is not None:
+      if override_shape.shape.ndims != 1:
         raise ValueError("shape override must be a vector")
     elif validate_args:
-      dynamic_assertions += [tf.assert_rank(
-          override_shape, 1,
-          message="shape override must be a vector")]
+      dynamic_assertions += [
+          tf.compat.v1.assert_rank(
+              override_shape, 1, message="shape override must be a vector")
+      ]
 
-    if tensor_util.constant_value(override_shape) is not None:
-      if any(s <= 0 for s in tensor_util.constant_value(override_shape)):
-        raise ValueError("shape override must have positive elements")
+    if tf.get_static_value(override_shape) is not None:
+      if any(s < 0 for s in tf.get_static_value(override_shape)):
+        raise ValueError("shape override must have non-negative elements")
     elif validate_args:
-      dynamic_assertions += [tf.assert_positive(
-          override_shape,
-          message="shape override must have positive elements")]
+      dynamic_assertions += [
+          tf.compat.v1.assert_non_negative(
+              override_shape,
+              message="shape override must have non-negative elements")
+      ]
 
     is_both_nonscalar = _logical_and(_logical_not(base_is_scalar),
                                      _logical_not(override_is_scalar))
-    if tensor_util.constant_value(is_both_nonscalar) is not None:
-      if tensor_util.constant_value(is_both_nonscalar):
+    if tf.get_static_value(is_both_nonscalar) is not None:
+      if tf.get_static_value(is_both_nonscalar):
         raise ValueError("base distribution not scalar")
     elif validate_args:
-      dynamic_assertions += [tf.assert_equal(
-          is_both_nonscalar, False,
-          message="base distribution not scalar")]
+      dynamic_assertions += [
+          tf.compat.v1.assert_equal(
+              is_both_nonscalar, False, message="base distribution not scalar")
+      ]
 
     if not dynamic_assertions:
       return override_shape
-    return control_flow_ops.with_dependencies(
+    return distribution_util.with_dependencies(
         dynamic_assertions, override_shape)
 
   def _maybe_rotate_dims(self, x, rotate_right=False):
     """Helper which rolls left event_dims left or right event_dims right."""
-    needs_rotation_const = tensor_util.constant_value(self._needs_rotation)
+    needs_rotation_const = tf.get_static_value(self._needs_rotation)
     if needs_rotation_const is not None and not needs_rotation_const:
       return x
     ndims = tf.rank(x)
     n = (ndims - self._rotate_ndims) if rotate_right else self._rotate_ndims
     return tf.transpose(
-        x, _concat_vectors(tf.range(n, ndims), tf.range(0, n)))
+        a=x, perm=_concat_vectors(tf.range(n, ndims), tf.range(0, n)))
 
   def _maybe_get_static_event_ndims(self):
     if self.event_shape.ndims is not None:
       return self.event_shape.ndims
 
-    event_ndims = tf.size(self.event_shape_tensor())
+    event_ndims = tf.size(input=self.event_shape_tensor())
     event_ndims_ = distribution_util.maybe_get_static_value(event_ndims)
 
     if event_ndims_ is not None:

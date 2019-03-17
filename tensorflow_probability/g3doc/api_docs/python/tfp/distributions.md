@@ -3,7 +3,6 @@
 <meta itemprop="path" content="Stable" />
 <meta itemprop="property" content="FULLY_REPARAMETERIZED"/>
 <meta itemprop="property" content="NOT_REPARAMETERIZED"/>
-<meta itemprop="property" content="__all__"/>
 </div>
 
 # Module: tfp.distributions
@@ -27,6 +26,8 @@ Statistical distributions and bijective transformations.
 [`class Categorical`](../tfp/distributions/Categorical.md): Categorical distribution.
 
 [`class Cauchy`](../tfp/distributions/Cauchy.md): The Cauchy distribution with location `loc` and scale `scale`.
+
+[`class Chi`](../tfp/distributions/Chi.md): Chi distribution.
 
 [`class Chi2`](../tfp/distributions/Chi2.md): Chi2 distribution.
 
@@ -68,6 +69,10 @@ Statistical distributions and bijective transformations.
 
 [`class HalfNormal`](../tfp/distributions/HalfNormal.md): The Half Normal distribution with scale `scale`.
 
+[`class HiddenMarkovModel`](../tfp/distributions/HiddenMarkovModel.md): Hidden Markov model distribution.
+
+[`class Horseshoe`](../tfp/distributions/Horseshoe.md): Horseshoe distribution.
+
 [`class Independent`](../tfp/distributions/Independent.md): Independent distribution from batch of distributions.
 
 [`class InverseGamma`](../tfp/distributions/InverseGamma.md): InverseGamma distribution.
@@ -108,6 +113,8 @@ Statistical distributions and bijective transformations.
 
 [`class MultivariateNormalTriL`](../tfp/distributions/MultivariateNormalTriL.md): The multivariate normal distribution on `R^k`.
 
+[`class MultivariateStudentTLinearOperator`](../tfp/distributions/MultivariateStudentTLinearOperator.md): The [Multivariate Student's t-distribution](
+
 [`class NegativeBinomial`](../tfp/distributions/NegativeBinomial.md): NegativeBinomial distribution.
 
 [`class Normal`](../tfp/distributions/Normal.md): The Normal distribution with location `loc` and `scale` parameters.
@@ -138,9 +145,13 @@ Statistical distributions and bijective transformations.
 
 [`class StudentT`](../tfp/distributions/StudentT.md): Student's t-distribution.
 
+[`class StudentTProcess`](../tfp/distributions/StudentTProcess.md): Marginal distribution of a Student's T process at finitely many points.
+
 [`class StudentTWithAbsDfSoftplusScale`](../tfp/distributions/StudentTWithAbsDfSoftplusScale.md): StudentT with `df = floor(abs(df))` and `scale = softplus(scale)`.
 
 [`class TransformedDistribution`](../tfp/distributions/TransformedDistribution.md): A Transformed Distribution.
+
+[`class Triangular`](../tfp/distributions/Triangular.md): Triangular distribution with `low`, `high` and `peak` parameters.
 
 [`class TruncatedNormal`](../tfp/distributions/TruncatedNormal.md): The Truncated Normal distribution.
 
@@ -162,13 +173,15 @@ Statistical distributions and bijective transformations.
 
 [`class Wishart`](../tfp/distributions/Wishart.md): The matrix Wishart distribution on positive definite matrices.
 
+[`class Zipf`](../tfp/distributions/Zipf.md): Zipf distribution.
+
 ## Functions
 
 [`assign_log_moving_mean_exp(...)`](../tfp/distributions/assign_log_moving_mean_exp.md): Compute the log of the exponentially weighted moving mean of the exp.
 
 [`assign_moving_mean_variance(...)`](../tfp/distributions/assign_moving_mean_variance.md): Compute exponentially weighted moving {mean,variance} of a streaming value.
 
-[`auto_correlation(...)`](../tfp/distributions/auto_correlation.md): Auto correlation along one axis.
+[`auto_correlation(...)`](../tfp/distributions/auto_correlation.md): Auto correlation along one axis. (deprecated)
 
 [`fill_triangular(...)`](../tfp/distributions/fill_triangular.md): Creates a (batch of) triangular matrix from a vector of inputs.
 
@@ -184,7 +197,7 @@ Statistical distributions and bijective transformations.
 
 [`normal_conjugates_known_scale_predictive(...)`](../tfp/distributions/normal_conjugates_known_scale_predictive.md): Posterior predictive Normal distribution w. conjugate prior on the mean.
 
-[`percentile(...)`](../tfp/distributions/percentile.md): Compute the `q`-th percentile of `x`.
+[`percentile(...)`](../tfp/distributions/percentile.md): Compute the `q`-th percentile(s) of `x`. (deprecated)
 
 [`quadrature_scheme_lognormal_gauss_hermite(...)`](../tfp/distributions/quadrature_scheme_lognormal_gauss_hermite.md): Use Gauss-Hermite quadrature to form quadrature on positive-reals.
 
@@ -205,6 +218,4 @@ Statistical distributions and bijective transformations.
 <h3 id="FULLY_REPARAMETERIZED"><code>FULLY_REPARAMETERIZED</code></h3>
 
 <h3 id="NOT_REPARAMETERIZED"><code>NOT_REPARAMETERIZED</code></h3>
-
-<h3 id="__all__"><code>__all__</code></h3>
 

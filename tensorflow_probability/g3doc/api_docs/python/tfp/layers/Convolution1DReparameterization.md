@@ -3,6 +3,7 @@
 <meta itemprop="path" content="Stable" />
 <meta itemprop="property" content="activity_regularizer"/>
 <meta itemprop="property" content="dtype"/>
+<meta itemprop="property" content="dynamic"/>
 <meta itemprop="property" content="input"/>
 <meta itemprop="property" content="input_mask"/>
 <meta itemprop="property" content="input_shape"/>
@@ -20,6 +21,7 @@
 <meta itemprop="property" content="weights"/>
 <meta itemprop="property" content="__call__"/>
 <meta itemprop="property" content="__init__"/>
+<meta itemprop="property" content="__setattr__"/>
 <meta itemprop="property" content="apply"/>
 <meta itemprop="property" content="build"/>
 <meta itemprop="property" content="compute_mask"/>
@@ -65,6 +67,17 @@ approximation of the distribution integrating over the `kernel` and `bias`.
 The arguments permit separate specification of the surrogate posterior
 (`q(W|x)`), prior (`p(W)`), and divergence for both the `kernel` and `bias`
 distributions.
+
+Upon being built, this layer adds losses (accessible via the `losses`
+property) representing the divergences of `kernel` and/or `bias` surrogate
+posteriors and their respective priors. When doing minibatch stochastic
+optimization, make sure to scale this loss such that it is applied just once
+per epoch (e.g. if `kl` is the sum of `losses` for each element of the batch,
+you should pass `kl / num_examples_per_epoch` to your optimizer).
+
+You can access the `kernel` and/or `bias` posterior and prior distributions
+after the layer is built via the `kernel_posterior`, `kernel_prior`,
+`bias_posterior` and `bias_prior` properties.
 
 #### Examples
 
@@ -155,36 +168,36 @@ Construct layer.
       linear activation.
 * <b>`activity_regularizer`</b>: Regularizer function for the output.
 * <b>`kernel_posterior_fn`</b>: Python `callable` which creates
-    `tf.distributions.Distribution` instance representing the surrogate
+    `tfd.Distribution` instance representing the surrogate
     posterior of the `kernel` parameter. Default value:
     `default_mean_field_normal_fn()`.
 * <b>`kernel_posterior_tensor_fn`</b>: Python `callable` which takes a
-    `tf.distributions.Distribution` instance and returns a representative
+    `tfd.Distribution` instance and returns a representative
     value. Default value: `lambda d: d.sample()`.
-* <b>`kernel_prior_fn`</b>: Python `callable` which creates `tf.distributions`
+* <b>`kernel_prior_fn`</b>: Python `callable` which creates `tfd`
     instance. See `default_mean_field_normal_fn` docstring for required
     parameter signature.
-    Default value: `tf.distributions.Normal(loc=0., scale=1.)`.
+    Default value: `tfd.Normal(loc=0., scale=1.)`.
 * <b>`kernel_divergence_fn`</b>: Python `callable` which takes the surrogate posterior
     distribution, prior distribution and random variate sample(s) from the
     surrogate posterior and computes or approximates the KL divergence. The
-    distributions are `tf.distributions.Distribution`-like instances and the
+    distributions are `tfd.Distribution`-like instances and the
     sample is a `Tensor`.
 * <b>`bias_posterior_fn`</b>: Python `callable` which creates
-    `tf.distributions.Distribution` instance representing the surrogate
+    `tfd.Distribution` instance representing the surrogate
     posterior of the `bias` parameter. Default value:
     `default_mean_field_normal_fn(is_singular=True)` (which creates an
-    instance of `tf.distributions.Deterministic`).
+    instance of `tfd.Deterministic`).
 * <b>`bias_posterior_tensor_fn`</b>: Python `callable` which takes a
-    `tf.distributions.Distribution` instance and returns a representative
+    `tfd.Distribution` instance and returns a representative
     value. Default value: `lambda d: d.sample()`.
-* <b>`bias_prior_fn`</b>: Python `callable` which creates `tf.distributions` instance.
+* <b>`bias_prior_fn`</b>: Python `callable` which creates `tfd` instance.
     See `default_mean_field_normal_fn` docstring for required parameter
     signature. Default value: `None` (no prior, no variational inference)
 * <b>`bias_divergence_fn`</b>: Python `callable` which takes the surrogate posterior
     distribution, prior distribution and random variate sample(s) from the
     surrogate posterior and computes or approximates the KL divergence. The
-    distributions are `tf.distributions.Distribution`-like instances and the
+    distributions are `tfd.Distribution`-like instances and the
     sample is a `Tensor`.
 
 
@@ -196,6 +209,10 @@ Construct layer.
 Optional regularizer function for the output of this layer.
 
 <h3 id="dtype"><code>dtype</code></h3>
+
+
+
+<h3 id="dynamic"><code>dynamic</code></h3>
 
 
 
@@ -263,9 +280,9 @@ Input shape, as an integer shape tuple
 
 Losses which are associated with this `Layer`.
 
-Note that when executing eagerly, getting this property evaluates
-regularizers. When using graph execution, variable regularization ops have
-already been created and are simply returned here.
+Variable regularization tensors are created when this property is accessed,
+so it is eager safe: accessing `losses` under a `tf.GradientTape` will
+propagate gradients back to the corresponding variables.
 
 #### Returns:
 
@@ -353,6 +370,8 @@ Output shape, as an integer shape tuple
 
 Returns the list of all layer variables/weights.
 
+Alias of `self.weights`.
+
 #### Returns:
 
 A list of variables.
@@ -408,6 +427,17 @@ Note:
 
 * <b>`ValueError`</b>: if the layer's `call` method returns None (an invalid value).
 
+<h3 id="__setattr__"><code>__setattr__</code></h3>
+
+``` python
+__setattr__(
+    name,
+    value
+)
+```
+
+
+
 <h3 id="apply"><code>apply</code></h3>
 
 ``` python
@@ -420,7 +450,7 @@ apply(
 
 Apply the layer on a input.
 
-This simply wraps `self.__call__`.
+This is an alias of `self.__call__`.
 
 #### Arguments:
 

@@ -30,8 +30,8 @@ __all__ = [
 
 
 def _add_diagonal_shift(matrix, shift):
-  diag_plus_shift = tf.matrix_diag_part(matrix) + shift
-  return tf.matrix_set_diag(matrix, diag_plus_shift)
+  diag_plus_shift = tf.linalg.diag_part(matrix) + shift
+  return tf.linalg.set_diag(matrix, diag_plus_shift)
 
 
 class GaussianProcessRegressionModel(
@@ -134,7 +134,7 @@ class GaussianProcessRegressionModel(
   f = lambda x: np.sin(10*x[..., 0]) * np.exp(-x[..., 0]**2)
   observation_index_points = np.random.uniform(-1., 1., 50)[..., np.newaxis]
   observations = (f(observation_index_points) +
-                  np.random.normal(0., np.sqrt(observation_noise_variance))
+                  np.random.normal(0., np.sqrt(observation_noise_variance)))
 
   index_points = np.linspace(-1., 1., 100)[..., np.newaxis]
 
@@ -406,29 +406,31 @@ class GaussianProcessRegressionModel(
         - `mean_fn` is not `None` and not callable.
     """
     parameters = dict(locals())
-    with tf.name_scope(name) as name:
+    with tf.compat.v1.name_scope(name) as name:
       dtype = dtype_util.common_dtype([
           index_points, observation_index_points, observations,
           observation_noise_variance, predictive_noise_variance, jitter
       ], tf.float32)
       index_points = tf.convert_to_tensor(
-          index_points, name='index_points', dtype=dtype)
-      observation_index_points = (
-          None if observation_index_points is None else
-          tf.convert_to_tensor(observation_index_points,
-                               dtype=dtype,
-                               name='observation_index_points'))
-      observations = (None if observations is None else
-                      tf.convert_to_tensor(
-                          observations, dtype=dtype, name='observations'))
+          value=index_points, name='index_points', dtype=dtype)
+      observation_index_points = (None if observation_index_points is None else
+                                  tf.convert_to_tensor(
+                                      value=observation_index_points,
+                                      dtype=dtype,
+                                      name='observation_index_points'))
+      observations = (None if observations is None else tf.convert_to_tensor(
+          value=observations, dtype=dtype, name='observations'))
       observation_noise_variance = tf.convert_to_tensor(
-          observation_noise_variance, dtype=dtype,
+          value=observation_noise_variance,
+          dtype=dtype,
           name='observation_noise_variance')
       predictive_noise_variance = (
-          observation_noise_variance if predictive_noise_variance is None
-          else tf.convert_to_tensor(predictive_noise_variance, dtype=dtype,
-                                    name='predictive_noise_variance'))
-      jitter = tf.convert_to_tensor(jitter, dtype=dtype, name='jitter')
+          observation_noise_variance
+          if predictive_noise_variance is None else tf.convert_to_tensor(
+              value=predictive_noise_variance,
+              dtype=dtype,
+              name='predictive_noise_variance'))
+      jitter = tf.convert_to_tensor(value=jitter, dtype=dtype, name='jitter')
 
       if (observation_index_points is None) != (observations is None):
         raise ValueError(
@@ -454,7 +456,7 @@ class GaussianProcessRegressionModel(
       self._mean_fn = mean_fn
       self._validate_args = validate_args
 
-      with tf.name_scope('init', values=[index_points, jitter]):
+      with tf.compat.v1.name_scope('init', values=[index_points, jitter]):
         (loc,
          covariance) = self._compute_marginal_distribution_loc_and_covariance()
         self._covariance_matrix = covariance
@@ -529,12 +531,13 @@ class GaussianProcessRegressionModel(
 
     # k_tx @ inv(k_xx + vI) @ (y - m(x))
     # = k_tx @ inv(chol(k_xx + vI)^t) @ inv(chol(k_xx + vI)) @ (y - m(t))
-    loc = k_tx_linop.matvec(
-        chol_k_xx_plus_noise.solvevec(
-            adjoint=True,
-            rhs=chol_k_xx_plus_noise.solvevec(
-                self.observations -
-                self._mean_fn(self.observation_index_points))))
+    loc = (self._mean_fn(self.index_points) +
+           k_tx_linop.matvec(
+               chol_k_xx_plus_noise.solvevec(
+                   adjoint=True,
+                   rhs=chol_k_xx_plus_noise.solvevec(
+                       self.observations -
+                       self._mean_fn(self.observation_index_points)))))
 
     # k_tt - k_tx @ inv(k_xx + vI) @ k_xt + vI
     # = k_tt - k_tx @ inv(chol(k_xx + vI)^t) @ inv(chol(k_xx + vI)) @ k_xt + vI
@@ -557,10 +560,11 @@ class GaussianProcessRegressionModel(
       return True
     ndims = self.kernel.feature_ndims
     if (self.observation_index_points.shape[-ndims:].is_fully_defined() and
-        self.observation_index_points.shape[-ndims].value == 0):
+        tf.compat.dimension_value(
+            self.observation_index_points.shape[-ndims]) == 0):
       return True
     if (self.observations.shape[-ndims:].is_fully_defined() and
-        self.observations.shape[-ndims].value == 0):
+        tf.compat.dimension_value(self.observations.shape[-ndims]) == 0):
       return True
     return False
 

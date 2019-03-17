@@ -42,7 +42,7 @@ __Layer 2: Model Building__
 * Probabilistic Layers ([`tfp.layers`](https://github.com/tensorflow/probability/tree/master/tensorflow_probability/python/layers)):
   Neural network layers with uncertainty over the functions they represent,
   extending TensorFlow Layers.
-* Trainable Distributions ([`tfp.trainable_distributions`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/trainable_distributions.py)):
+* Trainable Distributions ([`tfp.trainable_distributions`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/trainable_distributions)):
   Probability distributions parameterized by a single Tensor, making it easy to
   build neural nets that output probability distributions.
 
@@ -58,7 +58,7 @@ __Layer 3: Probabilistic Inference__
 * Optimizers ([`tfp.optimizer`](https://github.com/tensorflow/probability/tree/master/tensorflow_probability/python/optimizer)):
   Stochastic optimization methods, extending TensorFlow Optimizers. Includes
   [Stochastic Gradient Langevin Dynamics](http://www.icml-2011.org/papers/398_icmlpaper.pdf).
-* Monte Carlo ([`tfp.monte_carlo`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/monte_carlo.py)):
+* Monte Carlo ([`tfp.monte_carlo`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/monte_carlo)):
   Tools for computing Monte Carlo expectations.
 
 TensorFlow Probability is under active development. Interfaces may change at any
@@ -121,20 +121,15 @@ To install the latest version, run the following:
 pip install --user --upgrade tensorflow-probability  # depends on tensorflow (CPU-only)
 ```
 
-TensorFlow Probability depends on a recent stable release of TensorFlow
-(pip package `tensorflow`); see [TFP release notes](
-https://github.com/tensorflow/probability/releases) for details on the latest
-version of TensorFlow Probability, and the version of TensorFlow it depends on.
+TensorFlow Probability depends on a recent stable release of
+[TensorFlow](https://www.tensorflow.org/install) (pip package `tensorflow`). See
+the [TFP release notes](https://github.com/tensorflow/probability/releases) for
+details about dependencies between TensorFlow and TensorFlow Probability.
 
-We also provide a GPU-enabled package:
-
-```shell
-pip install --user --upgrade tensorflow-probability-gpu  # depends on tensorflow-gpu
-```
-
-Currently, TensorFlow Probability does not contain any GPU-specific code. The
-primary difference between these packages is that `tensorflow-probability-gpu`
-depends on a GPU-enabled version of TensorFlow.
+Note: Since TensorFlow is *not* included as a dependency of the TensorFlow
+Probability package (in `setup.py`), you must explicitly install the TensorFlow
+package (`tensorflow` or `tensorflow-gpu`). This allows us to maintain one
+package instead of separate packages for CPU and GPU-enabled TensorFlow.
 
 To force a Python 3-specific install, replace `pip` with `pip3` in the above
 commands. For additional installation help, guidance installing prerequisites,
@@ -143,10 +138,10 @@ installation guide](https://www.tensorflow.org/install).
 
 ### Nightly Builds
 
-We also release nightly builds, under the pip packages `tfp-nightly` and
-`tfp-nightly-gpu`; these depend on `tf-nightly` and `tf-nightly-gpu`,
-respectively. These builds include newer features, but may be less stable than
-our versioned releases.
+There are also nightly builds of TensorFlow Probability under the pip package
+`tfp-nightly`, which depends on one of `tf-nightly` and `tf-nightly-gpu`.
+Nightly builds include newer features, but may be less stable than the versioned
+releases.
 
 ### Installing from Source
 

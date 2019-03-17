@@ -20,11 +20,13 @@ from __future__ import print_function
 
 import math
 
+import numpy as np
 import tensorflow as tf
 from tensorflow_probability.python.distributions import distribution
+from tensorflow_probability.python.distributions import kullback_leibler
+from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
 from tensorflow_probability.python.internal import reparameterization
-from tensorflow.python.framework import tensor_shape
 
 
 class Uniform(distribution.Distribution):
@@ -97,17 +99,17 @@ class Uniform(distribution.Distribution):
       InvalidArgumentError: if `low >= high` and `validate_args=False`.
     """
     parameters = dict(locals())
-    with tf.name_scope(name, values=[low, high]) as name:
+    with tf.compat.v1.name_scope(name, values=[low, high]) as name:
       dtype = dtype_util.common_dtype([low, high], tf.float32)
-      low = tf.convert_to_tensor(low, name="low", dtype=dtype)
-      high = tf.convert_to_tensor(high, name="high", dtype=dtype)
+      low = tf.convert_to_tensor(value=low, name="low", dtype=dtype)
+      high = tf.convert_to_tensor(value=high, name="high", dtype=dtype)
       with tf.control_dependencies([
-          tf.assert_less(
+          tf.compat.v1.assert_less(
               low, high, message="uniform not defined when low >= high.")
       ] if validate_args else []):
         self._low = tf.identity(low)
         self._high = tf.identity(high)
-        tf.assert_same_float_dtype([self._low, self._high])
+        tf.debugging.assert_same_float_dtype([self._low, self._high])
     super(Uniform, self).__init__(
         dtype=self._low.dtype,
         reparameterization_type=reparameterization.FULLY_REPARAMETERIZED,
@@ -122,7 +124,10 @@ class Uniform(distribution.Distribution):
   def _param_shapes(sample_shape):
     return dict(
         zip(("low", "high"),
-            ([tf.convert_to_tensor(sample_shape, dtype=tf.int32)] * 2)))
+            ([tf.convert_to_tensor(value=sample_shape, dtype=tf.int32)] * 2)))
+
+  def _params_event_ndims(self):
+    return dict(low=0, high=0)
 
   @property
   def low(self):
@@ -141,42 +146,41 @@ class Uniform(distribution.Distribution):
 
   def _batch_shape_tensor(self):
     return tf.broadcast_dynamic_shape(
-        tf.shape(self.low),
-        tf.shape(self.high))
+        tf.shape(input=self.low), tf.shape(input=self.high))
 
   def _batch_shape(self):
     return tf.broadcast_static_shape(
-        self.low.get_shape(),
-        self.high.get_shape())
+        self.low.shape,
+        self.high.shape)
 
   def _event_shape_tensor(self):
     return tf.constant([], dtype=tf.int32)
 
   def _event_shape(self):
-    return tensor_shape.scalar()
+    return tf.TensorShape([])
 
   def _sample_n(self, n, seed=None):
     shape = tf.concat([[n], self.batch_shape_tensor()], 0)
-    samples = tf.random_uniform(shape=shape,
-                                dtype=self.dtype,
-                                seed=seed)
+    samples = tf.random.uniform(shape=shape, dtype=self.dtype, seed=seed)
     return self.low + self.range() * samples
 
   def _prob(self, x):
     broadcasted_x = x * tf.ones(
         self.batch_shape_tensor(), dtype=x.dtype)
     return tf.where(
-        tf.is_nan(broadcasted_x),
+        tf.math.is_nan(broadcasted_x),
         broadcasted_x,
         tf.where(
-            tf.logical_or(broadcasted_x < self.low,
-                          broadcasted_x >= self.high),
+            tf.logical_or(
+                broadcasted_x < self.low,
+                # This > is only sound for continuous uniform
+                broadcasted_x > self.high),
             tf.zeros_like(broadcasted_x),
             tf.ones_like(broadcasted_x) / self.range()))
 
   def _cdf(self, x):
     broadcast_shape = tf.broadcast_dynamic_shape(
-        tf.shape(x), self.batch_shape_tensor())
+        tf.shape(input=x), self.batch_shape_tensor())
     zeros = tf.zeros(broadcast_shape, dtype=self.dtype)
     ones = tf.ones(broadcast_shape, dtype=self.dtype)
     broadcasted_x = x * ones
@@ -184,8 +188,15 @@ class Uniform(distribution.Distribution):
         x < self.low, zeros, (broadcasted_x - self.low) / self.range())
     return tf.where(x >= self.high, ones, result_if_not_big)
 
+  def _quantile(self, value):
+    broadcast_shape = tf.broadcast_dynamic_shape(
+        tf.shape(input=value), self.batch_shape_tensor())
+    ones = tf.ones(broadcast_shape, dtype=self.dtype)
+    broadcasted_value = value * ones
+    return (1. - broadcasted_value) * self.low + broadcasted_value * self.high
+
   def _entropy(self):
-    return tf.log(self.range())
+    return tf.math.log(self.range())
 
   def _mean(self):
     return (self.low + self.high) / 2.
@@ -195,3 +206,37 @@ class Uniform(distribution.Distribution):
 
   def _stddev(self):
     return self.range() / math.sqrt(12.)
+
+
+@kullback_leibler.RegisterKL(Uniform, tf.compat.v1.distributions.Uniform)
+@kullback_leibler.RegisterKL(tf.compat.v1.distributions.Uniform, Uniform)
+@kullback_leibler.RegisterKL(Uniform, Uniform)
+def _kl_uniform_uniform(a, b, name=None):
+  """Calculate the batched KL divergence KL(a || b) with a and b Uniform.
+
+  Note that the KL divergence is infinite if the support of `a` is not a subset
+  of the support of `b`.
+
+  Args:
+    a: instance of a Uniform distribution object.
+    b: instance of a Uniform distribution object.
+    name: (optional) Name to use for created operations.
+      default is "kl_uniform_uniform".
+
+  Returns:
+    Batchwise KL(a || b)
+  """
+  with tf.compat.v1.name_scope(name, "kl_uniform_uniform",
+                               [a.low, b.low, a.high, b.high]):
+    # Consistent with
+    # http://www.mast.queensu.ca/~communications/Papers/gil-msc11.pdf, page 60
+    # Watch out for the change in conventions--they use 'a' and 'b' to refer to
+    # lower and upper bounds respectively there.
+    final_batch_shape = distribution_util.get_broadcast_shape(
+        a.low, b.low, a.high, b.high)
+    dtype = dtype_util.common_dtype(
+        [a.low, a.high, b.low, b.high], tf.float32)
+    return tf.where((b.low <= a.low) & (a.high <= b.high),
+                    tf.math.log(b.high - b.low) - tf.math.log(a.high - a.low),
+                    tf.broadcast_to(
+                        dtype.as_numpy_dtype(np.inf), final_batch_shape))

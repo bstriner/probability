@@ -30,7 +30,7 @@ on overriding distribution parameters.
 
 #### Args:
 
-* <b>`distribution`</b>: tf.Distribution governing the distribution of the random
+* <b>`distribution`</b>: tfd.Distribution governing the distribution of the random
     variable, such as sampling and log-probabilities.
 * <b>`sample_shape`</b>: tf.TensorShape of samples to draw from the random variable.
     Default is `()` corresponding to a single sample.
@@ -50,8 +50,8 @@ from tensorflow_probability import distributions as tfd
 from tensorflow_probability import edward2 as ed
 
 def model():
-  # equivalent to ed.Normal(0., 1., name="x")
-  return ed.as_random_variable(tfd.Normal(0., 1., name="x"))
+  # equivalent to ed.Normal(0., 1., name='x')
+  return ed.as_random_variable(tfd.Normal(0., 1., name='x'))
 
 log_joint = ed.make_log_joint_fn(model)
 output = log_joint(x=2.)

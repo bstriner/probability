@@ -24,15 +24,14 @@ from scipy.special import gamma
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
-
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 def make_relaxed_categorical(batch_shape, num_classes, dtype=tf.float32):
-  logits = tf.random_uniform(
+  logits = tf.random.uniform(
       list(batch_shape) + [num_classes], -10, 10, dtype=dtype) - 50.
-  temperatures = tf.random_uniform(list(batch_shape), 0.1, 10, dtype=tf.float32)
+  temperatures = tf.random.uniform(list(batch_shape), 0.1, 10, dtype=tf.float32)
   return tfd.RelaxedOneHotCategorical(temperatures, logits)
 
 
@@ -45,7 +44,7 @@ class ExpRelaxedOneHotCategoricalTest(tf.test.TestCase):
     dist = tfd.ExpRelaxedOneHotCategorical(temperature, logits)
     expected_p = np.exp(logits)/np.sum(np.exp(logits))
     self.assertAllClose(expected_p, self.evaluate(dist.probs))
-    self.assertAllEqual([3], dist.probs.get_shape())
+    self.assertAllEqual([3], dist.probs.shape)
 
   def testPdf(self):
     temperature = .4
@@ -63,6 +62,20 @@ class ExpRelaxedOneHotCategoricalTest(tf.test.TestCase):
     self.assertAllClose(expected_pdf, pdf)
 
 
+def analytical_pdf(x, temperature, logits):
+  # analytical density of RelaxedOneHotCategorical
+  temperature = np.reshape(temperature, (-1, 1))
+  if len(x.shape) == 1:
+    x = np.expand_dims(x, 0)
+  k = logits.shape[-1]
+  p = np.exp(logits) / np.sum(np.exp(logits), axis=-1, keepdims=True)
+  term1 = gamma(k) * np.power(temperature, k-1)
+  term2 = np.sum(p / (np.power(x, temperature)), axis=-1, keepdims=True)
+  term3 = np.prod(p / (np.power(x, temperature+1)), axis=-1, keepdims=True)
+  expected_pdf = term1 * np.power(term2, -k) * term3
+  return expected_pdf
+
+
 @test_util.run_all_in_graph_and_eager_modes
 class RelaxedOneHotCategoricalTest(tf.test.TestCase):
 
@@ -72,7 +85,14 @@ class RelaxedOneHotCategoricalTest(tf.test.TestCase):
     dist = tfd.RelaxedOneHotCategorical(temperature, logits)
     # check p for ExpRelaxed base distribution
     self.assertAllClose(logits, self.evaluate(dist._distribution.logits))
-    self.assertAllEqual([3], dist._distribution.logits.get_shape())
+    self.assertAllEqual([3], dist._distribution.logits.shape)
+
+  def testParamBroadcasting(self):
+    temperature = [1.0, 1.4]
+    logits = [2.0, 3.0, -4.0]
+    dist = tfd.RelaxedOneHotCategorical(temperature, logits)
+    self.assertAllEqual([2], dist.batch_shape)
+    self.assertAllEqual([3], dist.event_shape)
 
   def testSample(self):
     temperature = 1.4
@@ -93,19 +113,6 @@ class RelaxedOneHotCategoricalTest(tf.test.TestCase):
     self.assertAllEqual([5, 4, 1, 3], self.evaluate(dist.sample(5)).shape)
 
   def testPdf(self):
-    def analytical_pdf(x, temperature, logits):
-      # analytical density of RelaxedOneHotCategorical
-      temperature = np.reshape(temperature, (-1, 1))
-      if len(x.shape) == 1:
-        x = np.expand_dims(x, 0)
-      k = logits.shape[1]
-      p = np.exp(logits)/np.sum(np.exp(logits), axis=1, keepdims=True)
-      term1 = gamma(k)*np.power(temperature, k-1)
-      term2 = np.sum(p/(np.power(x, temperature)), axis=1, keepdims=True)
-      term3 = np.prod(p/(np.power(x, temperature+1)), axis=1, keepdims=True)
-      expected_pdf = term1*np.power(term2, -k)*term3
-      return expected_pdf
-
     temperature = .4
     logits = np.array([[.3, .1, .4]]).astype(np.float32)
     dist = tfd.RelaxedOneHotCategorical(temperature, logits)
@@ -116,6 +123,15 @@ class RelaxedOneHotCategoricalTest(tf.test.TestCase):
 
     # variable batch size
     logits = np.array([[.3, .1, .4], [.6, -.1, 2.]]).astype(np.float32)
+    temperatures = np.array([0.4, 2.3]).astype(np.float32)
+    dist = tfd.RelaxedOneHotCategorical(temperatures, logits)
+    x = self.evaluate(dist.sample())
+    pdf = self.evaluate(dist.prob(x))
+    expected_pdf = analytical_pdf(x, temperatures, logits)
+    self.assertAllClose(expected_pdf.flatten(), pdf, rtol=1e-4)
+
+    # broadcast logits over temparatures
+    logits = np.array([.3, .1, .4]).astype(np.float32)
     temperatures = np.array([0.4, 2.3]).astype(np.float32)
     dist = tfd.RelaxedOneHotCategorical(temperatures, logits)
     x = self.evaluate(dist.sample())
@@ -140,7 +156,8 @@ class RelaxedOneHotCategoricalTest(tf.test.TestCase):
       self.assertAllEqual([10], self.evaluate(dist.event_shape_tensor()))
 
   def testUnknownShape(self):
-    logits_pl = tf.placeholder_with_default(input=[.3, .1, .4], shape=None)
+    logits_pl = tf.compat.v1.placeholder_with_default(
+        input=[.3, .1, .4], shape=None)
     temperature = 1.0
     dist = tfd.ExpRelaxedOneHotCategorical(temperature, logits_pl)
     self.assertAllEqual([3], self.evaluate(dist.sample()).shape)
@@ -149,7 +166,7 @@ class RelaxedOneHotCategoricalTest(tf.test.TestCase):
   def testDTypes(self):
     # check that sampling and log_prob work for a range of dtypes
     for dtype in (tf.float16, tf.float32, tf.float64):
-      logits = tf.random_uniform(shape=[3, 3], dtype=dtype)
+      logits = tf.random.uniform(shape=[3, 3], dtype=dtype)
       dist = tfd.RelaxedOneHotCategorical(temperature=0.5, logits=logits)
       dist.log_prob(dist.sample())
 

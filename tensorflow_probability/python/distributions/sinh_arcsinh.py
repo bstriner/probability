@@ -19,12 +19,13 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tensorflow_probability.python import bijectors
+from tensorflow_probability.python.bijectors import affine_scalar as affine_scalar_bijector
+from tensorflow_probability.python.bijectors import chain as chain_bijector
+from tensorflow_probability.python.bijectors import sinh_arcsinh as sinh_arcsinh_bijector
 from tensorflow_probability.python.distributions import normal
 from tensorflow_probability.python.distributions import transformed_distribution
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
-from tensorflow.python.ops import control_flow_ops
 
 __all__ = [
     "SinhArcsinh",
@@ -134,17 +135,19 @@ class SinhArcsinh(transformed_distribution.TransformedDistribution):
     """
     parameters = dict(locals())
 
-    with tf.name_scope(name, values=[loc, scale, skewness, tailweight]) as name:
+    with tf.compat.v1.name_scope(
+        name, values=[loc, scale, skewness, tailweight]) as name:
       dtype = dtype_util.common_dtype([loc, scale, skewness, tailweight],
                                       tf.float32)
-      loc = tf.convert_to_tensor(loc, name="loc", dtype=dtype)
-      scale = tf.convert_to_tensor(scale, name="scale", dtype=dtype)
+      loc = tf.convert_to_tensor(value=loc, name="loc", dtype=dtype)
+      scale = tf.convert_to_tensor(value=scale, name="scale", dtype=dtype)
       tailweight = 1. if tailweight is None else tailweight
       has_default_skewness = skewness is None
       skewness = 0. if skewness is None else skewness
       tailweight = tf.convert_to_tensor(
-          tailweight, name="tailweight", dtype=dtype)
-      skewness = tf.convert_to_tensor(skewness, name="skewness", dtype=dtype)
+          value=tailweight, name="tailweight", dtype=dtype)
+      skewness = tf.convert_to_tensor(
+          value=skewness, name="skewness", dtype=dtype)
 
       batch_shape = distribution_util.get_broadcast_shape(
           loc, scale, tailweight, skewness)
@@ -163,26 +166,27 @@ class SinhArcsinh(transformed_distribution.TransformedDistribution):
         asserts = distribution_util.maybe_check_scalar_distribution(
             distribution, dtype, validate_args)
         if asserts:
-          loc = control_flow_ops.with_dependencies(asserts, loc)
+          loc = distribution_util.with_dependencies(asserts, loc)
 
       # Make the SAS bijector, 'F'.
-      f = bijectors.SinhArcsinh(
+      f = sinh_arcsinh_bijector.SinhArcsinh(
           skewness=skewness, tailweight=tailweight)
       if has_default_skewness:
         f_noskew = f
       else:
-        f_noskew = bijectors.SinhArcsinh(
+        f_noskew = sinh_arcsinh_bijector.SinhArcsinh(
             skewness=skewness.dtype.as_numpy_dtype(0.),
             tailweight=tailweight)
 
       # Make the AffineScalar bijector, Z --> loc + scale * Z (2 / F_0(2))
-      c = 2 * scale / f_noskew.forward(tf.convert_to_tensor(2, dtype=dtype))
-      affine = bijectors.AffineScalar(
+      c = 2 * scale / f_noskew.forward(
+          tf.convert_to_tensor(value=2, dtype=dtype))
+      affine = affine_scalar_bijector.AffineScalar(
           shift=loc,
           scale=c,
           validate_args=validate_args)
 
-      bijector = bijectors.Chain([affine, f])
+      bijector = chain_bijector.Chain([affine, f])
 
       super(SinhArcsinh, self).__init__(
           distribution=distribution,

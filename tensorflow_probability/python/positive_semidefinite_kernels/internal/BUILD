@@ -15,6 +15,8 @@
 # Description:
 #   Internal helper libraries for distributions.
 
+# [internal] load python3.bzl
+
 licenses(["notice"])  # Apache 2.0
 
 package(
@@ -29,6 +31,9 @@ py_library(
     name = "internal",
     srcs = ["__init__.py"],
     srcs_version = "PY2AND3",
+    deps = [
+        ":util",
+    ],
 )
 
 py_library(
@@ -48,5 +53,6 @@ py_test(
         ":util",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/math:gradient",
     ],
 )

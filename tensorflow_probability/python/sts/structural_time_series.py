@@ -108,7 +108,7 @@ class StructuralTimeSeries(object):
           batch_shape, param.prior.batch_shape_tensor())
     return batch_shape
 
-  def _maybe_build_param_map(self, param_vals):
+  def _canonicalize_param_vals_as_map(self, param_vals):
     """If given an ordered list of parameter values, build a name:value map.
 
     This is a utility method that allows parameter values to be specified as
@@ -154,7 +154,7 @@ class StructuralTimeSeries(object):
     """
     return self._make_state_space_model(
         num_timesteps=num_timesteps,
-        param_map=self._maybe_build_param_map(param_vals),
+        param_map=self._canonicalize_param_vals_as_map(param_vals),
         initial_state_prior=initial_state_prior,
         initial_step=initial_step)
 
@@ -195,7 +195,7 @@ class StructuralTimeSeries(object):
     seed = distributions.SeedStream(
         seed, salt='StructuralTimeSeries_prior_sample')
 
-    with tf.name_scope(
+    with tf.compat.v1.name_scope(
         'prior_sample',
         values=[num_timesteps, params_sample_shape, trajectories_sample_shape]):
       param_samples = [
@@ -230,12 +230,13 @@ class StructuralTimeSeries(object):
        inference.
     """
 
-    with tf.name_scope('joint_log_prob', values=[observed_time_series]):
-      observed_time_series = tf.convert_to_tensor(observed_time_series)
+    with tf.compat.v1.name_scope(
+        'joint_log_prob', values=[observed_time_series]):
+      observed_time_series = tf.convert_to_tensor(value=observed_time_series)
       observed_time_series = sts_util.maybe_expand_trailing_dim(
           observed_time_series)
       num_timesteps = distribution_util.prefer_static_value(
-          tf.shape(observed_time_series))[-2]
+          tf.shape(input=observed_time_series))[-2]
 
       def log_joint_fn(*param_vals):
         """Generated log-density function."""
@@ -259,7 +260,7 @@ class StructuralTimeSeries(object):
         sample_ndims = tf.maximum(0,
                                   tf.rank(observation_lp) - tf.rank(param_lp))
         observation_lp = tf.reduce_sum(
-            observation_lp, axis=tf.range(sample_ndims))
+            input_tensor=observation_lp, axis=tf.range(sample_ndims))
 
         return param_lp + observation_lp
 

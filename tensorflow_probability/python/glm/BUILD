@@ -15,6 +15,8 @@
 # Description:
 #   Generalized Linear Model specification, fitting, and related utilities.
 
+# [internal] load python3.bzl
+
 package(
     default_visibility = [
         "//tensorflow_probability:__subpackages__",
@@ -72,6 +74,7 @@ py_test(
     name = "proximal_hessian_test",
     size = "large",
     srcs = ["proximal_hessian_test.py"],
+    shard_count = 4,
     deps = [
         # numpy dep,
         # tensorflow dep,

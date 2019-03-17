@@ -20,11 +20,8 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow_probability.python.bijectors import bijector
-from tensorflow_probability.python.bijectors.shape import _DistributionShape
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
-from tensorflow.python.framework import tensor_util
-from tensorflow.python.ops import control_flow_ops
 
 
 __all__ = [
@@ -34,7 +31,8 @@ __all__ = [
 
 def _as_tensor(x, name, dtype):
   """Convenience to convert to `Tensor` or leave as `None`."""
-  return None if x is None else tf.convert_to_tensor(x, name=name, dtype=dtype)
+  return None if x is None else tf.convert_to_tensor(
+      value=x, name=name, dtype=dtype)
 
 
 class Affine(bijector.Bijector):
@@ -196,14 +194,14 @@ class Affine(bijector.Bijector):
         ], tf.float32)
 
       if shift is not None:
-        shift = tf.convert_to_tensor(shift, name="shift", dtype=dtype)
+        shift = tf.convert_to_tensor(value=shift, name="shift", dtype=dtype)
       self._shift = shift
 
       # When no args are specified, pretend the scale matrix is the identity
       # matrix.
       if (self._is_only_identity_multiplier and
           scale_identity_multiplier is None):
-        scale_identity_multiplier = tf.convert_to_tensor(1., dtype=dtype)
+        scale_identity_multiplier = tf.convert_to_tensor(value=1., dtype=dtype)
 
       # self._create_scale_operator returns a LinearOperator in all cases
       # except if self._is_only_identity_multiplier; in which case it
@@ -225,26 +223,13 @@ class Affine(bijector.Bijector):
               "shift.dtype({}) is incompatible with scale.dtype({}).".format(
                   shift.dtype, scale.dtype))
 
-        if scale.tensor_rank is not None:
-          batch_ndims = scale.tensor_rank - 2
-        else:
-          batch_ndims = scale.tensor_rank_tensor() - 2
-      else:
-        # We won't need shape inference when scale is None or when scale is a
-        # scalar.
-        batch_ndims = 0
       self._scale = scale
-      self._shaper = _DistributionShape(
-          batch_ndims=batch_ndims,
-          event_ndims=1,
-          validate_args=validate_args)
       self._adjoint = adjoint
       super(Affine, self).__init__(
           forward_min_event_ndims=1,
-          graph_parents=(
-              [self._scale] if tensor_util.is_tensor(self._scale)
-              else self._scale.graph_parents +
-              [self._shift] if self._shift is not None else []),
+          graph_parents=([self._scale] if tf.is_tensor(
+              self._scale) else self._scale.graph_parents +
+                         [self._shift] if self._shift is not None else []),
           is_constant_jacobian=True,
           dtype=dtype,
           validate_args=validate_args,
@@ -294,10 +279,10 @@ class Affine(bijector.Bijector):
 
     if self._is_only_identity_multiplier:
       if validate_args:
-        return control_flow_ops.with_dependencies([
-            tf.assert_none_equal(identity_multiplier,
-                                 tf.zeros([], identity_multiplier.dtype),
-                                 ["identity_multiplier should be non-zero."])
+        return distribution_util.with_dependencies([
+            tf.compat.v1.assert_none_equal(
+                identity_multiplier, tf.zeros([], identity_multiplier.dtype),
+                ["identity_multiplier should be non-zero."])
         ], identity_multiplier)
       return identity_multiplier
 
@@ -341,20 +326,16 @@ class Affine(bijector.Bijector):
   def _forward(self, x):
     y = x
     if self._is_only_identity_multiplier:
-      s = (tf.conj(self._scale)
-           if self.adjoint and self._scale.dtype.is_complex
-           else self._scale)
+      s = (
+          tf.math.conj(self._scale)
+          if self.adjoint and self._scale.dtype.is_complex else self._scale)
       y *= s
       if self.shift is not None:
         return y + self.shift
       return y
-    y, sample_shape = self._shaper.make_batch_of_event_sample_matrices(
-        y, expand_batch_dim=False)
     with tf.control_dependencies(self._maybe_check_scale()
                                  if self.validate_args else []):
-      y = self.scale.matmul(y, adjoint=self.adjoint)
-    y = self._shaper.undo_make_batch_of_event_sample_matrices(
-        y, sample_shape, expand_batch_dim=False)
+      y = self.scale.matvec(y, adjoint=self.adjoint)
     if self.shift is not None:
       y += self.shift
     return y
@@ -364,16 +345,12 @@ class Affine(bijector.Bijector):
     if self.shift is not None:
       x -= self.shift
     if self._is_only_identity_multiplier:
-      s = (tf.conj(self._scale)
-           if self.adjoint and self._scale.dtype.is_complex
-           else self._scale)
+      s = (
+          tf.math.conj(self._scale)
+          if self.adjoint and self._scale.dtype.is_complex else self._scale)
       return x / s
-    x, sample_shape = self._shaper.make_batch_of_event_sample_matrices(
-        x, expand_batch_dim=False)
     # Solve fails if the op is singular so we may safely skip this assertion.
-    x = self.scale.solve(x, adjoint=self.adjoint)
-    x = self._shaper.undo_make_batch_of_event_sample_matrices(
-        x, sample_shape, expand_batch_dim=False)
+    x = self.scale.solvevec(x, adjoint=self.adjoint)
     return x
 
   def _forward_log_det_jacobian(self, x):
@@ -383,8 +360,8 @@ class Affine(bijector.Bijector):
     if self._is_only_identity_multiplier:
       # We don't pad in this case and instead let the fldj be applied
       # via broadcast.
-      log_abs_diag = tf.log(tf.abs(self._scale))
-      event_size = tf.shape(x)[-1]
+      log_abs_diag = tf.math.log(tf.abs(self._scale))
+      event_size = tf.shape(input=x)[-1]
       event_size = tf.cast(event_size, dtype=log_abs_diag.dtype)
       return log_abs_diag * event_size
     return self.scale.log_abs_determinant()

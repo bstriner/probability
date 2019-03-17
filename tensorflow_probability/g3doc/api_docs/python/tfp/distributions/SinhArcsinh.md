@@ -136,7 +136,7 @@ Arguments `(loc, scale, skewness, tailweight)` must have broadcastable shape
 * <b>`tailweight`</b>:  Tailweight parameter. Default is `1.0` (unchanged tailweight)
 * <b>`distribution`</b>: `tf.Distribution`-like instance. Distribution that is
     transformed to produce this distribution.
-    Default is `tf.distributions.Normal(0., 1.)`.
+    Default is `tfd.Normal(0., 1.)`.
     Must be a scalar-batch, scalar-event distribution.  Typically
     `distribution.reparameterization_type = FULLY_REPARAMETERIZED` or it is
     a function of non-trainable parameters. WARNING: If you backprop through
@@ -225,8 +225,7 @@ Dictionary of parameters used to instantiate this `Distribution`.
 Describes how samples from the distribution are reparameterized.
 
 Currently this is one of the static instances
-`distributions.FULLY_REPARAMETERIZED`
-or `distributions.NOT_REPARAMETERIZED`.
+`tfd.FULLY_REPARAMETERIZED` or `tfd.NOT_REPARAMETERIZED`.
 
 #### Returns:
 
@@ -380,7 +379,7 @@ Computes the (Shannon) cross entropy.
 
 Denote this distribution (`self`) by `P` and the `other` distribution by
 `Q`. Assuming `P, Q` are absolutely continuous with respect to
-one another and permit densities `p(x) dr(x)` and `q(x) dr(x)`, (Shanon)
+one another and permit densities `p(x) dr(x)` and `q(x) dr(x)`, (Shannon)
 cross entropy is defined as:
 
 ```none
@@ -398,7 +397,7 @@ where `F` denotes the support of the random variable `X ~ P`.
 #### Returns:
 
 * <b>`cross_entropy`</b>: `self.dtype` `Tensor` with shape `[B1, ..., Bn]`
-    representing `n` different calculations of (Shanon) cross entropy.
+    representing `n` different calculations of (Shannon) cross entropy.
 
 <h3 id="entropy"><code>entropy</code></h3>
 
@@ -481,7 +480,7 @@ KL[p, q] = E_p[log(p(X)/q(X))]
 ```
 
 where `F` denotes the support of the random variable `X ~ p`, `H[., .]`
-denotes (Shanon) cross entropy, and `H[.]` denotes (Shanon) entropy.
+denotes (Shannon) cross entropy, and `H[.]` denotes (Shannon) entropy.
 
 #### Args:
 

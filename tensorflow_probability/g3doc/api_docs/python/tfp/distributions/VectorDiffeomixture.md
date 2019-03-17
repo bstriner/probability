@@ -193,14 +193,14 @@ p(x | z) := p(x | loc=sum_k z[k] loc[k], scale=sum_k z[k] scale[k])
     In terms of samples, smaller `temperature` means one component is more
     likely to dominate.  I.e., smaller `temperature` makes the VDM look more
     like a standard mixture of `K` components.
-* <b>`distribution`</b>: `tf.Distribution`-like instance. Distribution from which `d`
-    iid samples are used as input to the selected affine transformation.
-    Must be a scalar-batch, scalar-event distribution.  Typically
-    `distribution.reparameterization_type = FULLY_REPARAMETERIZED` or it is
-    a function of non-trainable parameters. WARNING: If you backprop through
-    a VectorDiffeomixture sample and the `distribution` is not
-    `FULLY_REPARAMETERIZED` yet is a function of trainable variables, then
-    the gradient will be incorrect!
+* <b>`distribution`</b>: <a href="../../tfp/distributions/Distribution.md"><code>tfp.distributions.Distribution</code></a>-like instance. Distribution
+    from which `d` iid samples are used as input to the selected affine
+    transformation. Must be a scalar-batch, scalar-event distribution.
+    Typically `distribution.reparameterization_type = FULLY_REPARAMETERIZED`
+    or it is a function of non-trainable parameters. WARNING: If you
+    backprop through a VectorDiffeomixture sample and the `distribution`
+    is not `FULLY_REPARAMETERIZED` yet is a function of trainable variables,
+    then the gradient will be incorrect!
 * <b>`loc`</b>: Length-`K` list of `float`-type `Tensor`s. The `k`-th element
     represents the `shift` used for the `k`-th affine transformation.  If
     the `k`-th item is `None`, `loc` is implicitly `0`.  When specified,
@@ -323,8 +323,7 @@ Dictionary of parameters used to instantiate this `Distribution`.
 Describes how samples from the distribution are reparameterized.
 
 Currently this is one of the static instances
-`distributions.FULLY_REPARAMETERIZED`
-or `distributions.NOT_REPARAMETERIZED`.
+`tfd.FULLY_REPARAMETERIZED` or `tfd.NOT_REPARAMETERIZED`.
 
 #### Returns:
 
@@ -466,7 +465,7 @@ Computes the (Shannon) cross entropy.
 
 Denote this distribution (`self`) by `P` and the `other` distribution by
 `Q`. Assuming `P, Q` are absolutely continuous with respect to
-one another and permit densities `p(x) dr(x)` and `q(x) dr(x)`, (Shanon)
+one another and permit densities `p(x) dr(x)` and `q(x) dr(x)`, (Shannon)
 cross entropy is defined as:
 
 ```none
@@ -484,7 +483,7 @@ where `F` denotes the support of the random variable `X ~ P`.
 #### Returns:
 
 * <b>`cross_entropy`</b>: `self.dtype` `Tensor` with shape `[B1, ..., Bn]`
-    representing `n` different calculations of (Shanon) cross entropy.
+    representing `n` different calculations of (Shannon) cross entropy.
 
 <h3 id="entropy"><code>entropy</code></h3>
 
@@ -567,7 +566,7 @@ KL[p, q] = E_p[log(p(X)/q(X))]
 ```
 
 where `F` denotes the support of the random variable `X ~ p`, `H[., .]`
-denotes (Shanon) cross entropy, and `H[.]` denotes (Shanon) entropy.
+denotes (Shannon) cross entropy, and `H[.]` denotes (Shannon) entropy.
 
 #### Args:
 

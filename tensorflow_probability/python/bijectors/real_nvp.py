@@ -20,7 +20,6 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow_probability.python.bijectors import conditional_bijector
-from tensorflow.python.layers import core as layers
 
 
 __all__ = [
@@ -35,7 +34,7 @@ class RealNVP(conditional_bijector.ConditionalBijector):
   Real NVP models a normalizing flow on a `D`-dimensional distribution via a
   single `D-d`-dimensional conditional distribution [(Dinh et al., 2017)][1]:
 
-  `y[d:D] = y[d:D] * tf.exp(log_scale_fn(y[d:D])) + shift_fn(y[d:D])`
+  `y[d:D] = x[d:D] * tf.exp(log_scale_fn(x[0:d])) + shift_fn(x[0:d])`
   `y[0:d] = x[0:d]`
 
   The last `D-d` units are scaled and shifted based on the first `d` units only,
@@ -168,7 +167,8 @@ class RealNVP(conditional_bijector.ConditionalBijector):
 
   def _cache_input_depth(self, x):
     if self._input_depth is None:
-      self._input_depth = x.shape.with_rank_at_least(1)[-1].value
+      self._input_depth = tf.compat.dimension_value(
+          x.shape.with_rank_at_least(1)[-1])
       if self._input_depth is None:
         raise NotImplementedError(
             "Rightmost dimension must be known prior to graph execution.")
@@ -211,7 +211,7 @@ class RealNVP(conditional_bijector.ConditionalBijector):
         y0, self._input_depth - self._num_masked, **condition_kwargs)
     if log_scale is None:
       return tf.constant(0., dtype=y.dtype, name="ildj")
-    return -tf.reduce_sum(log_scale, axis=-1)
+    return -tf.reduce_sum(input_tensor=log_scale, axis=-1)
 
   def _forward_log_det_jacobian(self, x, **condition_kwargs):
     self._cache_input_depth(x)
@@ -220,7 +220,7 @@ class RealNVP(conditional_bijector.ConditionalBijector):
         x0, self._input_depth - self._num_masked, **condition_kwargs)
     if log_scale is None:
       return tf.constant(0., dtype=x.dtype, name="fldj")
-    return tf.reduce_sum(log_scale, axis=-1)
+    return tf.reduce_sum(input_tensor=log_scale, axis=-1)
 
 
 def real_nvp_default_template(hidden_layers,
@@ -269,7 +269,7 @@ def real_nvp_default_template(hidden_layers,
        Processing Systems_, 2017. https://arxiv.org/abs/1705.07057
   """
 
-  with tf.name_scope(name, "real_nvp_default_template"):
+  with tf.compat.v1.name_scope(name, "real_nvp_default_template"):
 
     def _fn(x, output_units, **condition_kwargs):
       """Fully connected MLP parameterized via `real_nvp_template`."""
@@ -277,22 +277,27 @@ def real_nvp_default_template(hidden_layers,
         raise NotImplementedError(
             "Conditioning not implemented in the default template.")
 
+      if x.shape.rank == 1:
+        x = x[tf.newaxis, ...]
+        reshape_output = lambda x: x[0]
+      else:
+        reshape_output = lambda x: x
       for units in hidden_layers:
-        x = layers.dense(
+        x = tf.compat.v1.layers.dense(
             inputs=x,
             units=units,
             activation=activation,
             *args,  # pylint: disable=keyword-arg-before-vararg
             **kwargs)
-      x = layers.dense(
+      x = tf.compat.v1.layers.dense(
           inputs=x,
           units=(1 if shift_only else 2) * output_units,
           activation=None,
           *args,  # pylint: disable=keyword-arg-before-vararg
           **kwargs)
       if shift_only:
-        return x, None
+        return reshape_output(x), None
       shift, log_scale = tf.split(x, 2, axis=-1)
-      return shift, log_scale
+      return reshape_output(shift), reshape_output(log_scale)
 
-    return tf.make_template("real_nvp_default_template", _fn)
+    return tf.compat.v1.make_template("real_nvp_default_template", _fn)

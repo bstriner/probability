@@ -103,9 +103,9 @@ def logistic_regression_posterior(num_features):
       scale=tfp.trainable_distributions.softplus_and_shift(
           tf.get_variable("intercept_scale", [])),
       name="intercept_posterior")
-  return coeffs, intercept
+  return posterior_coeffs, posterior_intercept
 
-coeffs, intercept = logistic_regression_posterior(num_features)
+posterior_coeffs, posterior_intercept = logistic_regression_posterior(num_features)
 
 # Execute the program, returning a sample
 # (np.ndarray of shape (55,), np.ndarray of shape ()).
@@ -115,7 +115,7 @@ with tf.Session() as sess:
       [posterior_coeffs, posterior_intercept])
 ```
 
-Note the use of [`tfp.trainable_distributions`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/trainable_distributions.py)
+Note the use of [`tfp.trainable_distributions`](https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/trainable_distributions)
 in the above example. It provides utilities for distributions with parameters
 that live in a constrained space (like the scale of a normal).
 
@@ -208,7 +208,7 @@ states, kernel_results = tfp.mcmc.sample_chain(
     num_burnin_steps=500)
 
 with tf.Session() as sess:
-  states_, results_ = sess.run([states, kernels_results])
+  states_, results_ = sess.run([states, kernel_results])
 ```
 
 The returned `states_[0]` and `states_[1]` contain 1,000 posterior samples for

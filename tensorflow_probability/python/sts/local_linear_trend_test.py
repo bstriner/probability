@@ -24,11 +24,9 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability.python.sts import LocalLinearTrendStateSpaceModel
 
-from tensorflow.python.framework import test_util
-from tensorflow.python.platform import test
-
-tfl = tf.linalg
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+tfl = tf.linalg
 
 
 class _LocalLinearTrendStateSpaceModelTest(object):
@@ -90,7 +88,7 @@ class _LocalLinearTrendStateSpaceModelTest(object):
     self.assertAllEqual(self.evaluate(ssm.batch_shape_tensor()), batch_shape)
 
     y = ssm.sample()
-    self.assertAllEqual(self.evaluate(tf.shape(y))[:-2], batch_shape)
+    self.assertAllEqual(self.evaluate(tf.shape(input=y))[:-2], batch_shape)
 
   def _build_placeholder(self, ndarray):
     """Convert a numpy array to a TF placeholder.
@@ -105,7 +103,7 @@ class _LocalLinearTrendStateSpaceModelTest(object):
     """
 
     ndarray = np.asarray(ndarray).astype(self.dtype)
-    return tf.placeholder_with_default(
+    return tf.compat.v1.placeholder_with_default(
         input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
 
@@ -131,4 +129,4 @@ class LocalLinearTrendStateSpaceModelTestStaticShape64(
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

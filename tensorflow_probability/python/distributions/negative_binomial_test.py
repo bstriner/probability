@@ -22,7 +22,8 @@ from scipy import stats
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
+from tensorflow_probability.python.internal import test_util as tfp_test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 tfd = tfp.distributions
 
@@ -56,8 +57,8 @@ class NegativeBinomialTest(tf.test.TestCase):
   def testLogits(self):
     logits = [[0., 9., -0.5]]
     negbinom = tfd.NegativeBinomial(total_count=3., logits=logits)
-    self.assertEqual([1, 3], negbinom.probs.get_shape())
-    self.assertEqual([1, 3], negbinom.logits.get_shape())
+    self.assertEqual([1, 3], negbinom.probs.shape)
+    self.assertEqual([1, 3], negbinom.logits.shape)
     self.assertAllClose(logits, self.evaluate(negbinom.logits))
 
   def testInvalidP(self):
@@ -87,11 +88,11 @@ class NegativeBinomialTest(tf.test.TestCase):
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
     expected_log_cdf = stats.nbinom.logcdf(x, n=total_count, p=1 - probs_v)
     log_cdf = negbinom.log_cdf(x)
-    self.assertEqual([6], log_cdf.get_shape())
+    self.assertEqual([6], log_cdf.shape)
     self.assertAllClose(expected_log_cdf, self.evaluate(log_cdf))
 
     cdf = negbinom.cdf(x)
-    self.assertEqual([6], cdf.get_shape())
+    self.assertEqual([6], cdf.shape)
     self.assertAllClose(np.exp(expected_log_cdf), self.evaluate(cdf))
 
   def testNegativeBinomialLogCdfValidateArgs(self):
@@ -112,18 +113,18 @@ class NegativeBinomialTest(tf.test.TestCase):
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
     expected_log_pmf = stats.nbinom.logpmf(x, n=total_count, p=1 - probs_v)
     log_pmf = negbinom.log_prob(x)
-    self.assertEqual([6], log_pmf.get_shape())
+    self.assertEqual([6], log_pmf.shape)
     self.assertAllClose(expected_log_pmf, self.evaluate(log_pmf))
 
     pmf = negbinom.prob(x)
-    self.assertEqual([6], pmf.get_shape())
+    self.assertEqual([6], pmf.shape)
     self.assertAllClose(np.exp(expected_log_pmf), self.evaluate(pmf))
 
   def testNegativeBinomialLogPmfValidateArgs(self):
     batch_size = 6
     probs = [.9] * batch_size
     total_count = 5.
-    x = tf.placeholder_with_default(
+    x = tf.compat.v1.placeholder_with_default(
         input=[2.5, 3.2, 4.3, 5.1, 6., 7.], shape=[6])
     negbinom = tfd.NegativeBinomial(
         total_count=total_count, probs=probs, validate_args=True)
@@ -137,9 +138,9 @@ class NegativeBinomialTest(tf.test.TestCase):
     negbinom = tfd.NegativeBinomial(
         total_count=total_count, probs=probs, validate_args=False)
     log_pmf = negbinom.log_prob(x)
-    self.assertEqual([6], log_pmf.get_shape())
+    self.assertEqual([6], log_pmf.shape)
     pmf = negbinom.prob(x)
-    self.assertEqual([6], pmf.get_shape())
+    self.assertEqual([6], pmf.shape)
 
   def testNegativeBinomialLogPmfMultidimensional(self):
     batch_size = 6
@@ -151,12 +152,12 @@ class NegativeBinomialTest(tf.test.TestCase):
     expected_log_pmf = stats.nbinom.logpmf(x, n=total_count, p=1 - probs_v)
     log_pmf = negbinom.log_prob(x)
     log_pmf_values = self.evaluate(log_pmf)
-    self.assertEqual([6, 3], log_pmf.get_shape())
+    self.assertEqual([6, 3], log_pmf.shape)
     self.assertAllClose(expected_log_pmf, log_pmf_values)
 
     pmf = negbinom.prob(x)
     pmf_values = self.evaluate(pmf)
-    self.assertEqual([6, 3], pmf.get_shape())
+    self.assertEqual([6, 3], pmf.shape)
     self.assertAllClose(np.exp(expected_log_pmf), pmf_values)
 
   def testNegativeBinomialMean(self):
@@ -164,7 +165,7 @@ class NegativeBinomialTest(tf.test.TestCase):
     probs = np.array([.1, .3, .25], dtype=np.float32)
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
     expected_means = stats.nbinom.mean(n=total_count, p=1 - probs)
-    self.assertEqual([3], negbinom.mean().get_shape())
+    self.assertEqual([3], negbinom.mean().shape)
     self.assertAllClose(expected_means, self.evaluate(negbinom.mean()))
 
   def testNegativeBinomialVariance(self):
@@ -172,7 +173,7 @@ class NegativeBinomialTest(tf.test.TestCase):
     probs = np.array([.1, .3, .25], dtype=np.float32)
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
     expected_vars = stats.nbinom.var(n=total_count, p=1 - probs)
-    self.assertEqual([3], negbinom.variance().get_shape())
+    self.assertEqual([3], negbinom.variance().shape)
     self.assertAllClose(expected_vars, self.evaluate(negbinom.variance()))
 
   def testNegativeBinomialStddev(self):
@@ -180,7 +181,7 @@ class NegativeBinomialTest(tf.test.TestCase):
     probs = np.array([.1, .3, .25], dtype=np.float32)
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
     expected_stds = stats.nbinom.std(n=total_count, p=1 - probs)
-    self.assertEqual([3], negbinom.stddev().get_shape())
+    self.assertEqual([3], negbinom.stddev().shape)
     self.assertAllClose(expected_stds, self.evaluate(negbinom.stddev()))
 
   def testNegativeBinomialSample(self):
@@ -189,13 +190,13 @@ class NegativeBinomialTest(tf.test.TestCase):
     n = int(100e3)
     negbinom = tfd.NegativeBinomial(total_count=total_count, probs=probs)
 
-    samples = negbinom.sample(n, seed=12345)
-    self.assertEqual([n, 2], samples.get_shape())
+    samples = negbinom.sample(n, seed=tfp_test_util.test_seed())
+    self.assertEqual([n, 2], samples.shape)
 
-    sample_mean = tf.reduce_mean(samples, axis=0)
+    sample_mean = tf.reduce_mean(input_tensor=samples, axis=0)
     sample_var = tf.reduce_mean(
-        (samples - sample_mean[tf.newaxis, ...])**2., axis=0)
-    sample_min = tf.reduce_min(samples)
+        input_tensor=(samples - sample_mean[tf.newaxis, ...])**2., axis=0)
+    sample_min = tf.reduce_min(input_tensor=samples)
     [sample_mean_, sample_var_,
      sample_min_] = self.evaluate([sample_mean, sample_var, sample_min])
     self.assertAllEqual(

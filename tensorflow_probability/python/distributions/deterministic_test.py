@@ -21,9 +21,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
-
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 rng = np.random.RandomState(0)
 
@@ -65,7 +64,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc)
     expected_prob = [[1., 0.], [0., 1.]]
     prob = deterministic.prob(x)
-    self.assertAllEqual((2, 2), prob.get_shape())
+    self.assertAllEqual((2, 2), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroATol(self):
@@ -74,7 +73,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, atol=0.05)
     expected_prob = [[1., 0.], [1., 1.]]
     prob = deterministic.prob(x)
-    self.assertAllEqual((2, 2), prob.get_shape())
+    self.assertAllEqual((2, 2), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroATolIntegerType(self):
@@ -83,7 +82,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, atol=1)
     expected_prob = [[1, 1], [0, 1]]
     prob = deterministic.prob(x)
-    self.assertAllEqual((2, 2), prob.get_shape())
+    self.assertAllEqual((2, 2), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroRTol(self):
@@ -92,7 +91,17 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, rtol=0.01)
     expected_prob = [[1., 0.], [1., 0.]]
     prob = deterministic.prob(x)
-    self.assertAllEqual((2, 2), prob.get_shape())
+    self.assertAllEqual((2, 2), prob.shape)
+    self.assertAllEqual(expected_prob, self.evaluate(prob))
+
+  def testProbWithRTolBcastsLoc(self):
+    loc = [100., 200.]
+    rtol = [[0.01], [0.02]]
+    x = [[102., 201.9], [99.1, 205.]]
+    deterministic = tfd.Deterministic(loc, rtol=rtol)
+    expected_prob = [[0., 1.], [1., 0.]]
+    prob = deterministic.prob(x)
+    self.assertAllEqual((2, 2), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroRTolIntegerType(self):
@@ -103,7 +112,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, rtol=[[0], [1]])
     expected_prob = [[1, 0, 0], [1, 1, 0]]
     prob = deterministic.prob(x)
-    self.assertAllEqual((2, 3), prob.get_shape())
+    self.assertAllEqual((2, 3), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testCdfWithDefaultTol(self):
@@ -112,7 +121,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc)
     expected_cdf = [[0., 0.], [0., 1.]]
     cdf = deterministic.cdf(x)
-    self.assertAllEqual((2, 2), cdf.get_shape())
+    self.assertAllEqual((2, 2), cdf.shape)
     self.assertAllEqual(expected_cdf, self.evaluate(cdf))
 
   def testCdfWithNonzeroATol(self):
@@ -121,7 +130,7 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, atol=0.05)
     expected_cdf = [[0., 0.], [1., 1.]]
     cdf = deterministic.cdf(x)
-    self.assertAllEqual((2, 2), cdf.get_shape())
+    self.assertAllEqual((2, 2), cdf.shape)
     self.assertAllEqual(expected_cdf, self.evaluate(cdf))
 
   def testCdfWithNonzeroRTol(self):
@@ -130,14 +139,14 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic(loc, rtol=0.01)
     expected_cdf = [[0., 1.], [1., 0.]]
     cdf = deterministic.cdf(x)
-    self.assertAllEqual((2, 2), cdf.get_shape())
+    self.assertAllEqual((2, 2), cdf.shape)
     self.assertAllEqual(expected_cdf, self.evaluate(cdf))
 
   def testSampleNoBatchDims(self):
     deterministic = tfd.Deterministic(0.)
     for sample_shape in [(), (4,)]:
       sample = deterministic.sample(sample_shape)
-      self.assertAllEqual(sample_shape, sample.get_shape())
+      self.assertAllEqual(sample_shape, sample.shape)
       self.assertAllClose(
           np.zeros(sample_shape).astype(np.float32), self.evaluate(sample))
 
@@ -145,17 +154,26 @@ class DeterministicTest(tf.test.TestCase):
     deterministic = tfd.Deterministic([0., 0.])
     for sample_shape in [(), (4,)]:
       sample = deterministic.sample(sample_shape)
-      self.assertAllEqual(sample_shape + (2,), sample.get_shape())
+      self.assertAllEqual(sample_shape + (2,), sample.shape)
+      self.assertAllClose(
+          np.zeros(sample_shape + (2,)).astype(np.float32),
+          self.evaluate(sample))
+
+  def testSampleWithBatchAtol(self):
+    deterministic = tfd.Deterministic(0., atol=[.1, .1])
+    for sample_shape in [(), (4,)]:
+      sample = deterministic.sample(sample_shape)
+      self.assertAllEqual(sample_shape + (2,), sample.shape)
       self.assertAllClose(
           np.zeros(sample_shape + (2,)).astype(np.float32),
           self.evaluate(sample))
 
   def testSampleDynamicWithBatchDims(self):
-    loc = tf.placeholder_with_default(input=[0., 0], shape=[2])
+    loc = tf.compat.v1.placeholder_with_default(input=[0., 0], shape=[2])
 
     deterministic = tfd.Deterministic(loc)
     for sample_shape_ in [(), (4,)]:
-      sample_shape = tf.placeholder_with_default(
+      sample_shape = tf.compat.v1.placeholder_with_default(
           input=np.array(sample_shape_, dtype=np.int32), shape=None)
       sample_ = self.evaluate(deterministic.sample(sample_shape))
       self.assertAllClose(
@@ -196,6 +214,18 @@ class DeterministicTest(tf.test.TestCase):
 
 class VectorDeterministicTest(tf.test.TestCase):
 
+  def testParamBroadcasts(self):
+    loc = rng.rand(2, 1, 4)
+    atol = np.abs(rng.rand(2, 3, 1))
+    rtol = np.abs(rng.rand(7, 2, 3, 1))
+    deterministic = tfd.VectorDeterministic(loc, atol=atol, rtol=rtol)
+
+    self.assertAllEqual(
+        self.evaluate(deterministic.batch_shape_tensor()), (7, 2, 3))
+    self.assertAllEqual(deterministic.batch_shape, (7, 2, 3))
+    self.assertAllEqual(self.evaluate(deterministic.event_shape_tensor()), [4])
+    self.assertEqual(deterministic.event_shape, tf.TensorShape([4]))
+
   def testShape(self):
     loc = rng.rand(2, 3, 4)
     deterministic = tfd.VectorDeterministic(loc)
@@ -206,16 +236,23 @@ class VectorDeterministicTest(tf.test.TestCase):
     self.assertAllEqual(self.evaluate(deterministic.event_shape_tensor()), [4])
     self.assertEqual(deterministic.event_shape, tf.TensorShape([4]))
 
+  def testShapeUknown(self):
+    loc = tf.compat.v1.placeholder_with_default(np.float32([0]), shape=[None])
+    deterministic = tfd.VectorDeterministic(loc)
+    self.assertAllEqual(deterministic.event_shape_tensor().shape, [1])
+
   def testInvalidTolRaises(self):
     loc = rng.rand(2, 3, 4).astype(np.float32)
-    deterministic = tfd.VectorDeterministic(loc, atol=-1, validate_args=True)
-    with self.assertRaisesOpError("Condition x >= 0"):
+    with self.assertRaisesRegexp((ValueError, tf.errors.InvalidArgumentError),
+                                 "Condition x >= 0"):
+      deterministic = tfd.VectorDeterministic(loc, atol=-1, validate_args=True)
       self.evaluate(deterministic.prob(loc))
 
   def testInvalidXRaises(self):
     loc = rng.rand(2, 3, 4).astype(np.float32)
-    deterministic = tfd.VectorDeterministic(loc, atol=-1, validate_args=True)
-    with self.assertRaisesRegexp(ValueError, "must have rank at least 1"):
+    with self.assertRaisesRegexp((ValueError, tf.errors.InvalidArgumentError),
+                                 "must have rank at least 1"):
+      deterministic = tfd.VectorDeterministic(loc, atol=1, validate_args=True)
       self.evaluate(deterministic.prob(0.))
 
   def testProbVectorDeterministicWithNoBatchDims(self):
@@ -233,7 +270,7 @@ class VectorDeterministicTest(tf.test.TestCase):
     deterministic = tfd.VectorDeterministic(loc)
     expected_prob = [1., 0., 0.]
     prob = deterministic.prob(x)
-    self.assertAllEqual((3,), prob.get_shape())
+    self.assertAllEqual((3,), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroATol(self):
@@ -243,7 +280,18 @@ class VectorDeterministicTest(tf.test.TestCase):
     deterministic = tfd.VectorDeterministic(loc, atol=0.05)
     expected_prob = [1., 0., 1.]
     prob = deterministic.prob(x)
-    self.assertAllEqual((3,), prob.get_shape())
+    self.assertAllEqual((3,), prob.shape)
+    self.assertAllEqual(expected_prob, self.evaluate(prob))
+
+  def testProbWithATolBcastsLoc(self):
+    # 3 batch of deterministics on R^2.
+    loc = [0., 1.]
+    atol = [[0.02], [0.03], [0.05]]
+    x = [[0., .99], [0.04, 1.], [0., 1.045]]
+    deterministic = tfd.VectorDeterministic(loc, atol=atol)
+    expected_prob = [1., 0., 1.]
+    prob = deterministic.prob(x)
+    self.assertAllEqual((3,), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbWithNonzeroRTol(self):
@@ -253,7 +301,7 @@ class VectorDeterministicTest(tf.test.TestCase):
     deterministic = tfd.VectorDeterministic(loc, rtol=0.01)
     expected_prob = [1., 0., 1.]
     prob = deterministic.prob(x)
-    self.assertAllEqual((3,), prob.get_shape())
+    self.assertAllEqual((3,), prob.shape)
     self.assertAllEqual(expected_prob, self.evaluate(prob))
 
   def testProbVectorDeterministicWithNoBatchDimsOnRZero(self):
@@ -272,7 +320,7 @@ class VectorDeterministicTest(tf.test.TestCase):
     deterministic = tfd.VectorDeterministic([0.])
     for sample_shape in [(), (4,)]:
       sample = deterministic.sample(sample_shape)
-      self.assertAllEqual(sample_shape + (1,), sample.get_shape())
+      self.assertAllEqual(sample_shape + (1,), sample.shape)
       self.assertAllClose(
           np.zeros(sample_shape + (1,)).astype(np.float32),
           self.evaluate(sample))
@@ -281,17 +329,18 @@ class VectorDeterministicTest(tf.test.TestCase):
     deterministic = tfd.VectorDeterministic([[0.], [0.]])
     for sample_shape in [(), (4,)]:
       sample = deterministic.sample(sample_shape)
-      self.assertAllEqual(sample_shape + (2, 1), sample.get_shape())
+      self.assertAllEqual(sample_shape + (2, 1), sample.shape)
       self.assertAllClose(
           np.zeros(sample_shape + (2, 1)).astype(np.float32),
           self.evaluate(sample))
 
   def testSampleDynamicWithBatchDims(self):
-    loc = tf.placeholder_with_default(input=[[0.], [0.]], shape=[2, 1])
+    loc = tf.compat.v1.placeholder_with_default(
+        input=[[0.], [0.]], shape=[2, 1])
 
     deterministic = tfd.VectorDeterministic(loc)
     for sample_shape_ in [(), (4,)]:
-      sample_shape = tf.placeholder_with_default(
+      sample_shape = tf.compat.v1.placeholder_with_default(
           input=np.array(sample_shape_, dtype=np.int32), shape=None)
       sample_ = self.evaluate(deterministic.sample(sample_shape))
       self.assertAllClose(

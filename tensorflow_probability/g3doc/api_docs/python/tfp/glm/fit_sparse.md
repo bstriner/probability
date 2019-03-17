@@ -17,7 +17,6 @@ tfp.glm.fit_sparse(
     maximum_iterations=None,
     maximum_full_sweeps_per_iteration=1,
     learning_rate=None,
-    model_coefficients_update_var=None,
     name=None
 )
 ```
@@ -39,18 +38,19 @@ For large, sparse data sets, `model_matrix` should be supplied as a
 
 #### Args:
 
-* <b>`model_matrix`</b>: matrix-shaped, `float` `Tensor` or `SparseTensor` where each
-    row represents a sample's features.  Has shape `[N, n]` where `N` is the
-    number of data samples and `n` is the number of features per sample.
-* <b>`response`</b>: vector-shaped `Tensor` with the same dtype as `model_matrix` where
-    each element represents a sample's observed response (to the corresponding
-    row of features).
+* <b>`model_matrix`</b>: (Batch of) matrix-shaped, `float` `Tensor` or `SparseTensor`
+    where each row represents a sample's features.  Has shape `[N, n]` where
+    `N` is the number of data samples and `n` is the number of features per
+    sample.
+* <b>`response`</b>: (Batch of) vector-shaped `Tensor` with the same dtype as
+    `model_matrix` where each element represents a sample's observed response
+    (to the corresponding row of features).
 * <b>`model`</b>: <a href="../../tfp/glm/ExponentialFamily.md"><code>tfp.glm.ExponentialFamily</code></a>-like instance, which specifies the link
     function and distribution of the GLM, and thus characterizes the negative
     log-likelihood which will be minimized. Must have sufficient statistic
     equal to the response, that is, `T(y) = y`.
-* <b>`model_coefficients_start`</b>: vector-shaped, `float` `Tensor` with the same
-    dtype as `model_matrix`, representing the initial values of the
+* <b>`model_coefficients_start`</b>: (Batch of) vector-shaped, `float` `Tensor` with
+    the same dtype as `model_matrix`, representing the initial values of the
     coefficients for the GLM regression.  Has shape `[n]` where `model_matrix`
     has shape `[N, n]`.
 * <b>`tolerance`</b>: scalar, `float` `Tensor` representing the tolerance for each
@@ -72,24 +72,18 @@ For large, sparse data sets, `model_matrix` should be supplied as a
 * <b>`learning_rate`</b>: scalar, `float` `Tensor` representing a multiplicative factor
     used to dampen the proximal gradient descent steps.
     Default value: `None` (i.e., factor is conceptually `1`).
-* <b>`model_coefficients_update_var`</b>: `Variable` with the same shape and dtype as
-    `model_coefficients_start`.  Used to store the current value of
-    `model_coefficients_update`.
-    Default value: `None` (i.e., a new `Variable` will be created).
 * <b>`name`</b>: Python string representing the name of the TensorFlow operation.
     The default name is `"fit_sparse"`.
-
-Note that this function does not support batched inputs.
 
 
 #### Returns:
 
-* <b>`model_coefficients`</b>: `Tensor` of the same shape and dtype as
+* <b>`model_coefficients`</b>: (Batch of) `Tensor` of the same shape and dtype as
     `model_coefficients_start`, representing the computed model coefficients
     which minimize the regularized negative log-likelihood.
 * <b>`is_converged`</b>: scalar, `bool` `Tensor` indicating whether the minimization
-    procedure converged within the specified number of iterations.  Here
-    convergence means that an iteration of the inner loop
+    procedure converged across all batches within the specified number of
+    iterations.  Here convergence means that an iteration of the inner loop
     (`fit_sparse_one_step`) returns `True` for its `is_converged` output
     value.
 * <b>`iter`</b>: scalar, `int` `Tensor` indicating the actual number of iterations of
@@ -138,21 +132,18 @@ with tf.Session() as sess:
   model = tfp.glm.Bernoulli()
   model_coefficients_start = tf.zeros(x_.shape[-1], np.float32)
 
-  with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
-    model_coefficients, is_converged, num_iter = tfp.glm.fit_sparse(
-        model_matrix=tf.convert_to_tensor(x_),
-        response=tf.convert_to_tensor(y_),
-        model=model,
-        model_coefficients_start=model_coefficients_start,
-        l1_regularizer=800.,
-        l2_regularizer=None,
-        maximum_iterations=10,
-        maximum_full_sweeps_per_iteration=10,
-        tolerance=1e-6,
-        learning_rate=None)
+  model_coefficients, is_converged, num_iter = tfp.glm.fit_sparse(
+      model_matrix=tf.convert_to_tensor(x_),
+      response=tf.convert_to_tensor(y_),
+      model=model,
+      model_coefficients_start=model_coefficients_start,
+      l1_regularizer=800.,
+      l2_regularizer=None,
+      maximum_iterations=10,
+      maximum_full_sweeps_per_iteration=10,
+      tolerance=1e-6,
+      learning_rate=None)
 
-  init_op = tf.global_variables_initializer()
-  sess.run([init_op])
   model_coefficients_, is_converged_, num_iter_ = sess.run([
       model_coefficients, is_converged, num_iter])
 

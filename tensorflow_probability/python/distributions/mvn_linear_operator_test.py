@@ -24,10 +24,8 @@ from scipy import stats
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
-
-
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -39,7 +37,7 @@ class MultivariateNormalLinearOperatorTest(tf.test.TestCase):
   def _random_tril_matrix(self, shape):
     mat = self.rng.rand(*shape)
     chol = tfd.matrix_diag_transform(mat, transform=tf.nn.softplus)
-    return tf.matrix_band_part(chol, -1, 0)
+    return tf.linalg.band_part(chol, -1, 0)
 
   def _random_loc_and_scale(self, batch_shape, event_shape):
     # This ensures covariance is positive def.
@@ -73,8 +71,8 @@ class MultivariateNormalLinearOperatorTest(tf.test.TestCase):
 
     expected_log_pdf = scipy_mvn.logpdf(x)
     expected_pdf = scipy_mvn.pdf(x)
-    self.assertEqual((), log_pdf.get_shape())
-    self.assertEqual((), pdf.get_shape())
+    self.assertEqual((), log_pdf.shape)
+    self.assertEqual((), pdf.shape)
     self.assertAllClose(expected_log_pdf, self.evaluate(log_pdf))
     self.assertAllClose(expected_pdf, self.evaluate(pdf))
 
@@ -121,7 +119,7 @@ class MultivariateNormalLinearOperatorTest(tf.test.TestCase):
         loc=loc_b, scale=scale_b, validate_args=True)
 
     kl = tfd.kl_divergence(mvn_a, mvn_b)
-    self.assertEqual(batch_shape, kl.get_shape())
+    self.assertEqual(batch_shape, kl.shape)
 
     kl_v = self.evaluate(kl)
     expected_kl_0 = self._compute_non_batch_kl(
@@ -147,7 +145,7 @@ class MultivariateNormalLinearOperatorTest(tf.test.TestCase):
         loc=loc_b, scale=scale_b, validate_args=True)
 
     kl = tfd.kl_divergence(mvn_a, mvn_b)
-    self.assertEqual(batch_shape, kl.get_shape())
+    self.assertEqual(batch_shape, kl.shape)
 
     kl_v = self.evaluate(kl)
     expected_kl_0 = self._compute_non_batch_kl(

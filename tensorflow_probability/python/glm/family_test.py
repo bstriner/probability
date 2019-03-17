@@ -24,17 +24,16 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
-
-tfd = tfp.distributions
 tfb = tfp.bijectors
+tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 def make_lognormal(mean):
   """Helper which creates a LogNormal with a specific mean."""
-  mean = tf.convert_to_tensor(mean, name='mean')
+  mean = tf.convert_to_tensor(value=mean, name='mean')
   s2 = np.log(2.).astype(mean.dtype.as_numpy_dtype())
-  return tfd.LogNormal(tf.log(mean) - 0.5 * s2, np.sqrt(s2))
+  return tfd.LogNormal(tf.math.log(mean) - 0.5 * s2, np.sqrt(s2))
 
 
 class _GLMTestHarness(object):
@@ -121,7 +120,7 @@ class BernoulliNormalCDFTest(tf.test.TestCase, _GLMTestHarness):
     self.dtype = np.float32
     self.model = tfp.glm.BernoulliNormalCDF()
     def normal_cdf(r):
-      r = tf.convert_to_tensor(r, name='r')
+      r = tf.convert_to_tensor(value=r, name='r')
       n = tfd.Normal(loc=tf.zeros([], r.dtype.base_dtype),
                      scale=tf.ones([], r.dtype.base_dtype))
       return n.cdf(r)
@@ -190,7 +189,7 @@ class NormalReciprocalTest(tf.test.TestCase, _GLMTestHarness):
     self.dtype = np.float32
     self.model = tfp.glm.NormalReciprocal()
     self.expected = tfp.glm.CustomExponentialFamily(
-        lambda mu: tfd.Normal(mu, self.dtype(1)), tf.reciprocal)
+        lambda mu: tfd.Normal(mu, self.dtype(1)), tf.math.reciprocal)
 
 
 @test_util.run_all_in_graph_and_eager_modes

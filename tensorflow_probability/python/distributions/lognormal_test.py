@@ -23,9 +23,9 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
-
+from tensorflow_probability.python.internal import test_util as tfp_test_util
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -54,7 +54,7 @@ class LogNormalTest(tf.test.TestCase):
   def testLogNormalSample(self):
     loc, scale = 1.5, 0.4
     dist = tfd.LogNormal(loc=loc, scale=scale)
-    samples = self.evaluate(dist.sample(6000, seed=1234))
+    samples = self.evaluate(dist.sample(6000, seed=tfp_test_util.test_seed()))
     self.assertAllClose(np.mean(samples),
                         self.evaluate(dist.mean()),
                         atol=0.1)
@@ -81,7 +81,8 @@ class LogNormalTest(tf.test.TestCase):
     x = np.array([1e-4, 1.0, 2.0], dtype=np.float32)
 
     cdf = dist.cdf(x)
-    analytical_cdf = .5 + .5 * tf.erf((np.log(x) - loc) / (scale * np.sqrt(2)))
+    analytical_cdf = .5 + .5 * tf.math.erf(
+        (np.log(x) - loc) / (scale * np.sqrt(2)))
     self.assertAllClose(self.evaluate(cdf),
                         self.evaluate(analytical_cdf))
 

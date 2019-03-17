@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.util import deprecation
 from tensorflow.python.util import tf_inspect
 
@@ -90,9 +89,10 @@ def kl_divergence(distribution_a, distribution_b,
     # well. This typically happens when this function is called on a pair of
     # TF's distributions.
     with deprecation.silence():
-      return tf.distributions.kl_divergence(distribution_a, distribution_b)
+      return tf.compat.v1.distributions.kl_divergence(distribution_a,
+                                                      distribution_b)
 
-  with tf.name_scope("KullbackLeibler"):
+  with tf.compat.v1.name_scope("KullbackLeibler"):
     kl_t = kl_fn(distribution_a, distribution_b, name=name)
     if allow_nan_stats:
       return kl_t
@@ -101,12 +101,13 @@ def kl_divergence(distribution_a, distribution_b,
     kl_t = tf.identity(kl_t, name="kl")
 
     with tf.control_dependencies([
-        control_flow_ops.Assert(
-            tf.logical_not(
-                tf.reduce_any(tf.is_nan(kl_t))),
-            ["KL calculation between %s and %s returned NaN values "
-             "(and was called with allow_nan_stats=False). Values:"
-             % (distribution_a.name, distribution_b.name), kl_t])]):
+        tf.Assert(
+            tf.logical_not(tf.reduce_any(input_tensor=tf.math.is_nan(kl_t))), [
+                "KL calculation between %s and %s returned NaN values "
+                "(and was called with allow_nan_stats=False). Values:" %
+                (distribution_a.name, distribution_b.name), kl_t
+            ])
+    ]):
       return tf.identity(kl_t, name="checked_kl")
 
 
@@ -137,7 +138,7 @@ def cross_entropy(ref, other,
     cross_entropy: `ref.dtype` `Tensor` with shape `[B1, ..., Bn]`
       representing `n` different calculations of (Shanon) cross entropy.
   """
-  with tf.name_scope(name, "cross_entropy"):
+  with tf.compat.v1.name_scope(name, "cross_entropy"):
     return ref.entropy() + kl_divergence(
         ref, other, allow_nan_stats=allow_nan_stats)
 
@@ -188,5 +189,5 @@ class RegisterKL(object):
     # Additionally, for distributions which have deprecated copies, we register
     # all 3 combinations in their respective files (see test for the list).
     with deprecation.silence():
-      tf.distributions.RegisterKL(*self._key)(kl_fn)
+      tf.compat.v1.distributions.RegisterKL(*self._key)(kl_fn)
     return kl_fn

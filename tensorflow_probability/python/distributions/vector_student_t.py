@@ -19,7 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-from tensorflow_probability.python import bijectors
+from tensorflow_probability.python.bijectors import affine as affine_bijector
 from tensorflow_probability.python.distributions import student_t
 from tensorflow_probability.python.distributions import transformed_distribution
 from tensorflow_probability.python.internal import distribution_util
@@ -177,10 +177,10 @@ class _VectorStudentT(transformed_distribution.TransformedDistribution):
     parameters = dict(locals())
     graph_parents = [df, loc, scale_identity_multiplier, scale_diag,
                      scale_tril, scale_perturb_factor, scale_perturb_diag]
-    with tf.name_scope(name) as name:
-      with tf.name_scope("init", values=graph_parents):
+    with tf.compat.v1.name_scope(name) as name:
+      with tf.compat.v1.name_scope("init", values=graph_parents):
         dtype = dtype_util.common_dtype(graph_parents, tf.float32)
-        df = tf.convert_to_tensor(df, name="df", dtype=dtype)
+        df = tf.convert_to_tensor(value=df, name="df", dtype=dtype)
         # The shape of the _VectorStudentT distribution is governed by the
         # relationship between df.batch_shape and affine.batch_shape. In
         # pseudocode the basic procedure is:
@@ -197,7 +197,7 @@ class _VectorStudentT(transformed_distribution.TransformedDistribution):
         # Here we really only need to collect the affine.batch_shape and decide
         # what we're going to pass in to TransformedDistribution's
         # (override) batch_shape arg.
-        affine = bijectors.Affine(
+        affine = affine_bijector.Affine(
             shift=loc,
             scale_identity_multiplier=scale_identity_multiplier,
             scale_diag=scale_diag,

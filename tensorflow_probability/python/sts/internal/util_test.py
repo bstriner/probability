@@ -24,12 +24,11 @@ import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 from tensorflow_probability.python.sts.internal import util as sts_util
 
-from tensorflow.python.framework import test_util
-from tensorflow.python.platform import test
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import
 
 
 @test_util.run_all_in_graph_and_eager_modes
-class MultivariateNormalUtilsTest(test.TestCase):
+class MultivariateNormalUtilsTest(tf.test.TestCase):
 
   def test_factored_joint_mvn_diag_full(self):
     batch_shape = [3, 2]
@@ -143,9 +142,9 @@ class MultivariateNormalUtilsTest(test.TestCase):
                                       mvn3.covariance()))
 
 
-class UtilityTests(test.TestCase):
+@test_util.run_all_in_graph_and_eager_modes
+class UtilityTests(tf.test.TestCase):
 
-  @test_util.run_in_graph_and_eager_modes
   def test_broadcast_batch_shape_static(self):
 
     batch_shapes = ([2], [3, 2], [1, 2])
@@ -157,20 +156,21 @@ class UtilityTests(test.TestCase):
 
   def test_broadcast_batch_shape_dynamic(self):
     # Run in graph mode only, since eager mode always takes the static path
+    if tf.executing_eagerly(): return
 
     batch_shapes = ([2], [3, 2], [1, 2])
-    distributions = [tfd.Normal(
-        loc=tf.placeholder_with_default(
-            input=tf.zeros(batch_shape), shape=None),
-        scale=tf.placeholder_with_default(
-            input=tf.ones(batch_shape), shape=None))
-                     for batch_shape in batch_shapes]
+    distributions = [
+        tfd.Normal(
+            loc=tf.compat.v1.placeholder_with_default(
+                input=tf.zeros(batch_shape), shape=None),
+            scale=tf.compat.v1.placeholder_with_default(
+                input=tf.ones(batch_shape), shape=None))
+        for batch_shape in batch_shapes
+    ]
 
-    self.assertAllEqual(self.evaluate(
-        sts_util.broadcast_batch_shape(distributions)),
-                        [3, 2])
+    self.assertAllEqual(
+        [3, 2], self.evaluate(sts_util.broadcast_batch_shape(distributions)))
 
-  @test_util.run_in_graph_and_eager_modes
   def test_maybe_expand_trailing_dim(self):
 
     # static inputs
@@ -195,9 +195,28 @@ class UtilityTests(test.TestCase):
     ]:
       shape_out = self.evaluate(
           sts_util.maybe_expand_trailing_dim(
-              tf.placeholder_with_default(
+              tf.compat.v1.placeholder_with_default(
                   input=tf.zeros(shape_in), shape=static_shape))).shape
       self.assertAllEqual(shape_out, expected_shape_out)
 
+  def test_mix_over_posterior_draws(self):
+    num_posterior_draws = 3
+    batch_shape = [2, 1]
+    means = np.random.randn(*np.concatenate([[num_posterior_draws],
+                                             batch_shape]))
+    variances = np.exp(np.random.randn(*np.concatenate(
+        [[num_posterior_draws], batch_shape])))
+
+    posterior_mixture_dist = sts_util.mix_over_posterior_draws(means, variances)
+
+    # Compute the true statistics of the mixture distribution.
+    mixture_mean = np.mean(means, axis=0)
+    mixture_variance = np.mean(variances + means**2, axis=0) - mixture_mean**2
+
+    self.assertAllClose(mixture_mean,
+                        self.evaluate(posterior_mixture_dist.mean()))
+    self.assertAllClose(mixture_variance,
+                        self.evaluate(posterior_mixture_dist.variance()))
+
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

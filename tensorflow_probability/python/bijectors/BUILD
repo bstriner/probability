@@ -16,6 +16,8 @@
 #   Contains ops for bijectors.
 #   APIs here are meant to evolve over time.
 
+# [internal] load python3.bzl
+
 licenses(["notice"])  # Apache 2.0
 
 package(
@@ -36,12 +38,15 @@ py_library(
         ":affine_scalar",
         ":batch_normalization",
         ":bijector",
+        ":blockwise",
+        ":categorical_to_discrete",
         ":chain",
         ":cholesky_outer_product",
         ":cholesky_to_inv_cholesky",
         ":conditional_bijector",
         ":discrete_cosine_transform",
         ":exp",
+        ":expm1",
         ":fill_triangular",
         ":gumbel",
         ":identity",
@@ -50,10 +55,13 @@ py_library(
         ":kumaraswamy",
         ":masked_autoregressive",
         ":matrix_inverse_tril",
+        ":matveclu",
+        ":normal_cdf",
         ":ordered",
         ":permute",
         ":power_transform",
         ":real_nvp",
+        ":reciprocal",
         ":reshape",
         ":scale_tril",
         ":sigmoid",
@@ -71,11 +79,16 @@ py_library(
 
 py_library(
     name = "bijector",
-    srcs = ["bijector.py"],
+    srcs = [
+        "bijector.py",
+        "chain.py",
+    ],
     deps = [
         # numpy dep,
         # six dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/distributions:distribution",
+        "//tensorflow_probability/python/distributions:transformed_distribution",
         "//tensorflow_probability/python/internal:distribution_util",
     ],
 )
@@ -94,7 +107,6 @@ py_library(
     srcs = ["affine_linear_operator.py"],
     deps = [
         ":bijector",
-        ":shape",
         # tensorflow dep,
     ],
 )
@@ -113,7 +125,6 @@ py_library(
     srcs = ["affine.py"],
     deps = [
         ":bijector",
-        ":shape",
         # tensorflow dep,
         "//tensorflow_probability/python/internal:distribution_util",
         "//tensorflow_probability/python/internal:dtype_util",
@@ -126,6 +137,25 @@ py_library(
     deps = [
         ":bijector",
         # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "blockwise",
+    srcs = ["blockwise.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "categorical_to_discrete",
+    srcs = ["categorical_to_discrete.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+        "//tensorflow_probability/python/internal:distribution_util",
     ],
 )
 
@@ -169,6 +199,16 @@ py_library(
 )
 
 py_library(
+    name = "matveclu",
+    srcs = ["matveclu.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+        "//tensorflow_probability/python/math:linalg",
+    ],
+)
+
+py_library(
     name = "discrete_cosine_transform",
     srcs = ["discrete_cosine_transform.py"],
     deps = [
@@ -182,6 +222,15 @@ py_library(
     name = "exp",
     srcs = ["exp.py"],
     deps = [":power_transform"],
+)
+
+py_library(
+    name = "expm1",
+    srcs = ["expm1.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+    ],
 )
 
 py_library(
@@ -241,6 +290,7 @@ py_library(
         ":bijector",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/math:numeric",
     ],
 )
 
@@ -250,6 +300,16 @@ py_library(
     deps = [
         ":bijector",
         # tensorflow dep,
+    ],
+)
+
+py_library(
+    name = "normal_cdf",
+    srcs = ["normal_cdf.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+        "//tensorflow_probability/python/internal:special_math",
     ],
 )
 
@@ -291,6 +351,15 @@ py_library(
 )
 
 py_library(
+    name = "reciprocal",
+    srcs = ["reciprocal.py"],
+    deps = [
+        ":bijector",
+        # tensorflow dep,
+    ],
+)
+
+py_library(
     name = "reshape",
     srcs = ["reshape.py"],
     deps = [
@@ -309,15 +378,6 @@ py_library(
         ":fill_triangular",
         ":softplus",
         ":transform_diagonal",
-    ],
-)
-
-py_library(
-    name = "shape",
-    srcs = ["shape.py"],
-    deps = [
-        # tensorflow dep,
-        "//tensorflow_probability/python/internal:distribution_util",
     ],
 )
 
@@ -420,9 +480,10 @@ py_library(
     name = "bijector_test_util",
     srcs = ["bijector_test_util.py"],
     deps = [
+        ":identity",
         # numpy dep,
         # tensorflow dep,
-        "//tensorflow_probability/python/distributions",
+        "//tensorflow_probability/python/distributions:uniform",
     ],
 )
 
@@ -435,6 +496,7 @@ py_test(
         # numpy dep,
         # six dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/distributions",
     ],
 )
 
@@ -533,11 +595,46 @@ py_test(
 )
 
 py_test(
+    name = "blockwise_test",
+    size = "small",
+    srcs = ["blockwise_test.py"],
+    deps = [
+        ":bijector_test_util",
+        ":bijectors",
+        # absl/testing:parameterized dep,
+        # numpy dep,
+        # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "categorical_to_discrete_test",
+    size = "small",
+    srcs = ["categorical_to_discrete_test.py"],
+    deps = [
+        ":bijector_test_util",
+        ":bijectors",
+        # tensorflow dep,
+    ],
+)
+
+py_test(
     name = "conditional_bijector_test",
     size = "small",
     srcs = ["conditional_bijector_test.py"],
     deps = [
         ":bijectors",
+        # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "matveclu_test",
+    size = "small",
+    srcs = ["matveclu_test.py"],
+    deps = [
+        ":bijectors",
+        # numpy dep,
         # tensorflow dep,
     ],
 )
@@ -559,6 +656,18 @@ py_test(
     name = "exp_test",
     size = "small",
     srcs = ["exp_test.py"],
+    deps = [
+        ":bijector_test_util",
+        ":bijectors",
+        # numpy dep,
+        # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "expm1_test",
+    size = "small",
+    srcs = ["expm1_test.py"],
     deps = [
         ":bijector_test_util",
         ":bijectors",
@@ -639,6 +748,7 @@ py_test(
 py_test(
     name = "masked_autoregressive_test",
     size = "small",
+    timeout = "moderate",
     srcs = ["masked_autoregressive_test.py"],
     deps = [
         ":bijectors",
@@ -658,6 +768,17 @@ py_test(
         ":bijectors",
         # numpy dep,
         # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "normal_cdf_test",
+    srcs = ["normal_cdf_test.py"],
+    deps = [
+        ":bijector_test_util",
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
     ],
 )
 
@@ -698,7 +819,7 @@ py_test(
 
 py_test(
     name = "real_nvp_test",
-    size = "small",
+    size = "medium",
     srcs = ["real_nvp_test.py"],
     deps = [
         ":bijectors",
@@ -706,6 +827,19 @@ py_test(
         # tensorflow dep,
         "//tensorflow_probability/python/distributions",
         "//tensorflow_probability/python/internal:test_util",
+    ],
+)
+
+py_test(
+    name = "reciprocal_test",
+    size = "small",
+    srcs = ["reciprocal_test.py"],
+    deps = [
+        ":bijector_test_util",
+        ":bijectors",
+        ":reciprocal",
+        # absl/testing:parameterized dep,
+        # tensorflow dep,
     ],
 )
 
@@ -727,17 +861,6 @@ py_test(
     srcs = ["scale_tril_test.py"],
     deps = [
         ":bijectors",
-        # numpy dep,
-        # tensorflow dep,
-    ],
-)
-
-py_test(
-    name = "shape_test",
-    size = "medium",
-    srcs = ["shape_test.py"],
-    deps = [
-        ":shape",
         # numpy dep,
         # tensorflow dep,
     ],
@@ -848,6 +971,7 @@ py_test(
         ":bijectors",
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/distributions",
     ],
 )
 

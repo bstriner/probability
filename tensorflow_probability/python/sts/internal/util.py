@@ -21,8 +21,9 @@ from __future__ import print_function
 import tensorflow as tf
 
 from tensorflow_probability.python import distributions as tfd
-
 from tensorflow_probability.python.distributions.mvn_linear_operator import MultivariateNormalLinearOperator
+from tensorflow_probability.python.internal import distribution_util as dist_util
+
 
 tfl = tf.linalg
 
@@ -44,7 +45,7 @@ def broadcast_batch_shape(distributions):
     batch_shape = tf.broadcast_dynamic_shape(batch_shape,
                                              distribution.batch_shape_tensor())
 
-  return tf.convert_to_tensor(batch_shape)
+  return tf.convert_to_tensor(value=batch_shape)
 
 
 def factored_joint_mvn(distributions):
@@ -76,13 +77,13 @@ def factored_joint_mvn(distributions):
 
   graph_parents = [tensor for distribution in distributions
                    for tensor in distribution._graph_parents]  # pylint: disable=protected-access
-  with tf.name_scope('factored_joint_mvn', values=graph_parents):
+  with tf.compat.v1.name_scope('factored_joint_mvn', values=graph_parents):
 
     # We explicitly broadcast the `locs` so that we can concatenate them.
     # We don't have direct numerical access to the `scales`, which are arbitrary
     # linear operators, but `LinearOperatorBlockDiag` appears to do the right
     # thing without further intervention.
-    dtype = tf.assert_same_float_dtype(distributions)
+    dtype = tf.debugging.assert_same_float_dtype(distributions)
     broadcast_ones = tf.ones(broadcast_batch_shape(distributions),
                              dtype=dtype)[..., tf.newaxis]
     return MultivariateNormalLinearOperator(
@@ -116,7 +117,7 @@ def sum_mvns(distributions):
 
   graph_parents = [tensor for distribution in distributions
                    for tensor in distribution._graph_parents]  # pylint: disable=protected-access
-  with tf.name_scope('sum_mvns', values=graph_parents):
+  with tf.compat.v1.name_scope('sum_mvns', values=graph_parents):
     if all([isinstance(mvn, tfd.MultivariateNormalDiag)
             for mvn in distributions]):
       return tfd.MultivariateNormalDiag(
@@ -138,21 +139,24 @@ def empirical_statistics(observed_time_series):
        `batch_shape + [num_timesteps]` (allowed if `num_timesteps > 1`).
 
   Returns:
+    observed_mean: `Tensor` of shape `batch_shape`, giving the empirical
+      mean of each time series in the batch.
     observed_stddev: `Tensor` of shape `batch_shape`, giving the empirical
       standard deviation of each time series in the batch.
-    observed_initial: `Tensor of shape `batch_shape`, giving the initial value
-      of each time series in the batch.
+    observed_initial: `Tensor of shape `batch_shape`, giving the
+      initial value of each time series in the batch.
   """
 
-  with tf.name_scope('empirical_statistics', values=[observed_time_series]):
+  with tf.compat.v1.name_scope(
+      'empirical_statistics', values=[observed_time_series]):
     observed_time_series = tf.convert_to_tensor(
-        observed_time_series, name='observed_time_series')
+        value=observed_time_series, name='observed_time_series')
     observed_time_series = maybe_expand_trailing_dim(observed_time_series)
-    _, observed_variance = tf.nn.moments(
-        tf.squeeze(observed_time_series, -1), axes=-1)
+    observed_mean, observed_variance = tf.nn.moments(
+        x=tf.squeeze(observed_time_series, -1), axes=-1)
     observed_stddev = tf.sqrt(observed_variance)
     observed_initial = observed_time_series[..., 0, 0]
-    return observed_stddev, observed_initial
+    return observed_mean, observed_stddev, observed_initial
 
 
 def maybe_expand_trailing_dim(observed_time_series):
@@ -175,16 +179,64 @@ def maybe_expand_trailing_dim(observed_time_series):
     expanded_time_series: `Tensor` of shape `batch_shape + [num_timesteps, 1]`.
   """
 
-  with tf.name_scope(
+  with tf.compat.v1.name_scope(
       'maybe_expand_trailing_dim', values=[observed_time_series]):
+    observed_time_series = tf.convert_to_tensor(
+        value=observed_time_series, name='observed_time_series')
     if (observed_time_series.shape.ndims is not None and
-        observed_time_series.shape[-1].value is not None):
+        tf.compat.dimension_value(observed_time_series.shape[-1]) is not None):
       expanded_time_series = (
           observed_time_series if observed_time_series.shape[-1] == 1 else
           observed_time_series[..., tf.newaxis])
     else:
       expanded_time_series = tf.cond(
-          tf.equal(tf.shape(observed_time_series)[-1], 1),
-          lambda: observed_time_series,
-          lambda: observed_time_series[..., tf.newaxis])
+          pred=tf.equal(tf.shape(input=observed_time_series)[-1], 1),
+          true_fn=lambda: observed_time_series,
+          false_fn=lambda: observed_time_series[..., tf.newaxis])
     return expanded_time_series
+
+
+def mix_over_posterior_draws(means, variances):
+  """Construct a predictive normal distribution that mixes over posterior draws.
+
+  Args:
+    means: float `Tensor` of shape
+      `[num_posterior_draws, ..., num_timesteps]`.
+    variances: float `Tensor` of shape
+      `[num_posterior_draws, ..., num_timesteps]`.
+
+  Returns:
+    mixture_dist: `tfd.MixtureSameFamily(tfd.Independent(tfd.Normal))` instance
+      representing a uniform mixture over the posterior samples, with
+      `batch_shape = ...` and `event_shape = [num_timesteps]`.
+
+  """
+  # The inputs `means`, `variances` have shape
+  #   `concat([
+  #      [num_posterior_draws],
+  #      sample_shape,
+  #      batch_shape,
+  #      [num_timesteps]])`
+  # Because MixtureSameFamily mixes over the rightmost batch dimension,
+  # we need to move the `num_posterior_draws` dimension to be rightmost
+  # in the batch shape. This requires use of `Independent` (to preserve
+  # `num_timesteps` as part of the event shape) and `move_dimension`.
+  # TODO(b/120245392): enhance `MixtureSameFamily` to reduce along an
+  # arbitrary axis, and eliminate `move_dimension` calls here.
+
+  with tf.compat.v1.name_scope(
+      'mix_over_posterior_draws', values=[means, variances]):
+    num_posterior_draws = dist_util.prefer_static_value(
+        tf.shape(input=means))[0]
+
+    component_observations = tfd.Independent(
+        distribution=tfd.Normal(
+            loc=dist_util.move_dimension(means, 0, -2),
+            scale=tf.sqrt(dist_util.move_dimension(variances, 0, -2))),
+        reinterpreted_batch_ndims=1)
+
+    return tfd.MixtureSameFamily(
+        mixture_distribution=tfd.Categorical(
+            logits=tf.zeros([num_posterior_draws],
+                            dtype=component_observations.dtype)),
+        components_distribution=component_observations)

@@ -11,6 +11,7 @@
 <meta itemprop="property" content="scale"/>
 <meta itemprop="property" content="shift"/>
 <meta itemprop="property" content="validate_args"/>
+<meta itemprop="property" content="__call__"/>
 <meta itemprop="property" content="__init__"/>
 <meta itemprop="property" content="forward"/>
 <meta itemprop="property" content="forward_event_shape"/>
@@ -93,7 +94,8 @@ __init__(
     scale_perturb_diag=None,
     adjoint=False,
     validate_args=False,
-    name='affine'
+    name='affine',
+    dtype=None
 )
 ```
 
@@ -133,19 +135,19 @@ specified then `scale += IdentityMatrix`. Otherwise specifying a
     `scale += IdentityMatrix`. Otherwise no scaled-identity-matrix is added
     to `scale`.
 * <b>`scale_diag`</b>: Floating-point `Tensor` representing the diagonal matrix.
-    `scale_diag` has shape [N1, N2, ...  k], which represents a k x k
+    `scale_diag` has shape `[N1, N2, ...  k]`, which represents a k x k
     diagonal matrix.
     When `None` no diagonal term is added to `scale`.
-* <b>`scale_tril`</b>: Floating-point `Tensor` representing the diagonal matrix.
-    `scale_diag` has shape [N1, N2, ...  k, k], which represents a k x k
-    lower triangular matrix.
+* <b>`scale_tril`</b>: Floating-point `Tensor` representing the lower triangular
+    matrix. `scale_tril` has shape `[N1, N2, ...  k, k]`, which represents a
+    k x k lower triangular matrix.
     When `None` no `scale_tril` term is added to `scale`.
     The upper triangular elements above the diagonal are ignored.
 * <b>`scale_perturb_factor`</b>: Floating-point `Tensor` representing factor matrix
     with last two dimensions of shape `(k, r)`. When `None`, no rank-r
     update is added to `scale`.
 * <b>`scale_perturb_diag`</b>: Floating-point `Tensor` representing the diagonal
-    matrix. `scale_perturb_diag` has shape [N1, N2, ...  r], which
+    matrix. `scale_perturb_diag` has shape `[N1, N2, ...  r]`, which
     represents an `r x r` diagonal matrix. When `None` low rank updates will
     take the form `scale_perturb_factor * scale_perturb_factor.T`.
 * <b>`adjoint`</b>: Python `bool` indicating whether to use the `scale` matrix as
@@ -154,6 +156,9 @@ specified then `scale += IdentityMatrix`. Otherwise specifying a
 * <b>`validate_args`</b>: Python `bool` indicating whether arguments should be
     checked for correctness.
 * <b>`name`</b>: Python `str` name given to ops managed by this object.
+* <b>`dtype`</b>: `tf.DType` to prefer when converting args to `Tensor`s. Else, we
+    fall back to a common dtype inferred from the args, finally falling back
+    to float32.
 
 
 #### Raises:
@@ -215,6 +220,62 @@ Returns True if Tensor arguments will be validated.
 
 
 ## Methods
+
+<h3 id="__call__"><code>__call__</code></h3>
+
+``` python
+__call__(
+    value,
+    name=None,
+    **kwargs
+)
+```
+
+Applies or composes the `Bijector`, depending on input type.
+
+This is a convenience function which applies the `Bijector` instance in
+three different ways, depending on the input:
+
+1. If the input is a `tfd.Distribution` instance, return
+   `tfd.TransformedDistribution(distribution=input, bijector=self)`.
+2. If the input is a `tfb.Bijector` instance, return
+   `tfb.Chain([self, input])`.
+3. Otherwise, return `self.forward(input)`
+
+#### Args:
+
+* <b>`value`</b>: A `tfd.Distribution`, `tfb.Bijector`, or a `Tensor`.
+* <b>`name`</b>: Python `str` name given to ops created by this function.
+* <b>`**kwargs`</b>: Additional keyword arguments passed into the created
+    `tfd.TransformedDistribution`, `tfb.Bijector`, or `self.forward`.
+
+
+#### Returns:
+
+* <b>`composition`</b>: A `tfd.TransformedDistribution` if the input was a
+    `tfd.Distribution`, a `tfb.Chain` if the input was a `tfb.Bijector`, or
+    a `Tensor` computed by `self.forward`.
+
+#### Examples
+
+```python
+sigmoid = tfb.Reciprocal()(
+    tfb.AffineScalar(shift=1.)(
+      tfb.Exp()(
+        tfb.AffineScalar(scale=-1.))))
+# ==> `tfb.Chain([
+#         tfb.Reciprocal(),
+#         tfb.AffineScalar(shift=1.),
+#         tfb.Exp(),
+#         tfb.AffineScalar(scale=-1.),
+#      ])`  # ie, `tfb.Sigmoid()`
+
+log_normal = tfb.Exp()(tfd.Normal(0, 1))
+# ==> `tfd.TransformedDistribution(tfd.Normal(0, 1), tfb.Exp())`
+
+tfb.Exp()([-1., 0., 1.])
+# ==> tf.exp([-1., 0., 1.])
+```
 
 <h3 id="forward"><code>forward</code></h3>
 
@@ -429,10 +490,10 @@ evaluated at `g^{-1}(y)`.
 
 #### Returns:
 
-`Tensor`, if this bijector is injective.
-  If not injective, returns the tuple of local log det
-  Jacobians, `log(det(Dg_i^{-1}(y)))`, where `g_i` is the restriction
-  of `g` to the `ith` partition `Di`.
+* <b>`ildj`</b>: `Tensor`, if this bijector is injective.
+    If not injective, returns the tuple of local log det
+    Jacobians, `log(det(Dg_i^{-1}(y)))`, where `g_i` is the restriction
+    of `g` to the `ith` partition `Di`.
 
 
 #### Raises:

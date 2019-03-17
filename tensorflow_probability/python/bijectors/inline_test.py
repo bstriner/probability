@@ -22,7 +22,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 from tensorflow_probability.python import bijectors as tfb
-from tensorflow.python.framework import test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -33,8 +33,8 @@ class InlineBijectorTest(tf.test.TestCase):
     exp = tfb.Exp()
     inline = tfb.Inline(
         forward_fn=tf.exp,
-        inverse_fn=tf.log,
-        inverse_log_det_jacobian_fn=lambda y: -tf.log(y),
+        inverse_fn=tf.math.log,
+        inverse_log_det_jacobian_fn=lambda y: -tf.math.log(y),
         forward_log_det_jacobian_fn=lambda x: x,
         forward_min_event_ndims=0,
         name="exp")

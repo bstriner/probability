@@ -27,13 +27,11 @@ from tensorflow_probability import distributions as tfd
 from tensorflow_probability.python.sts import AdditiveStateSpaceModel
 from tensorflow_probability.python.sts import LocalLinearTrendStateSpaceModel
 
-from tensorflow.python.framework import test_util
-from tensorflow.python.platform import test
-
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 tfl = tf.linalg
 
 
-class _AdditiveStateSpaceModelTest(object):
+class _AdditiveStateSpaceModelTest(tf.test.TestCase):
 
   def test_identity(self):
 
@@ -169,7 +167,7 @@ class _AdditiveStateSpaceModelTest(object):
     else:
       self.assertAllEqual(self.evaluate(additive_ssm.batch_shape_tensor()),
                           batch_shape)
-      self.assertAllEqual(self.evaluate(tf.shape(y))[:-2], batch_shape)
+      self.assertAllEqual(self.evaluate(tf.shape(input=y))[:-2], batch_shape)
 
   def test_multivariate_observations(self):
 
@@ -196,7 +194,8 @@ class _AdditiveStateSpaceModelTest(object):
     else:
       self.assertAllEqual(self.evaluate(combined_ssm.event_shape_tensor()),
                           expected_event_shape)
-      self.assertAllEqual(self.evaluate(tf.shape(y))[-2:], expected_event_shape)
+      self.assertAllEqual(
+          self.evaluate(tf.shape(input=y))[-2:], expected_event_shape)
 
   def test_mismatched_num_timesteps_error(self):
 
@@ -233,8 +232,8 @@ class _AdditiveStateSpaceModelTest(object):
     else:
       self.assertAllEqual(self.evaluate(additive_ssm.batch_shape_tensor()),
                           broadcast_batch_shape)
-      self.assertAllEqual(self.evaluate(tf.shape(y))[:-2],
-                          broadcast_batch_shape)
+      self.assertAllEqual(
+          self.evaluate(tf.shape(input=y))[:-2], broadcast_batch_shape)
 
   def test_broadcasting_correctness(self):
 
@@ -292,7 +291,7 @@ class _AdditiveStateSpaceModelTest(object):
     # Both additive SSMs define the same model, so they should give the same
     # log_probs.
     y = self.evaluate(broadcast_additive_ssm.sample(seed=42))
-    self.assertAllEqual(self.evaluate(broadcast_additive_ssm.log_prob(y)),
+    self.assertAllClose(self.evaluate(broadcast_additive_ssm.log_prob(y)),
                         self.evaluate(manual_additive_ssm.log_prob(y)))
 
   def test_mismatched_observation_size_error(self):
@@ -315,6 +314,61 @@ class _AdditiveStateSpaceModelTest(object):
     with self.assertRaisesRegexp(Exception, 'dtype'):
       _ = AdditiveStateSpaceModel(component_ssms=[ssm1, ssm2])
 
+  def test_constant_offset(self):
+    offset_ = 1.23456
+    offset = self._build_placeholder(offset_)
+    ssm = self._dummy_model()
+
+    additive_ssm = AdditiveStateSpaceModel([ssm])
+    additive_ssm_with_offset = AdditiveStateSpaceModel(
+        [ssm], constant_offset=offset)
+    additive_ssm_with_offset_and_explicit_scale = AdditiveStateSpaceModel(
+        [ssm],
+        constant_offset=offset,
+        observation_noise_scale=(
+            ssm.get_observation_noise_for_timestep(0).stddev()[..., 0]))
+
+    mean_, offset_mean_, offset_with_scale_mean_ = self.evaluate(
+        (additive_ssm.mean(),
+         additive_ssm_with_offset.mean(),
+         additive_ssm_with_offset_and_explicit_scale.mean()))
+    print(mean_.shape, offset_mean_.shape, offset_with_scale_mean_.shape)
+    self.assertAllClose(mean_, offset_mean_ - offset_)
+    self.assertAllClose(mean_, offset_with_scale_mean_ - offset_)
+
+    # Offset should not affect the stddev.
+    stddev_, offset_stddev_, offset_with_scale_stddev_ = self.evaluate(
+        (additive_ssm.stddev(),
+         additive_ssm_with_offset.stddev(),
+         additive_ssm_with_offset_and_explicit_scale.stddev()))
+    self.assertAllClose(stddev_, offset_stddev_)
+    self.assertAllClose(stddev_, offset_with_scale_stddev_)
+
+  def test_batch_shape_ignores_component_state_priors(self):
+    # If we pass an initial_state_prior directly to an AdditiveSSM, overriding
+    # the initial state priors of component models, the overall batch shape
+    # should no longer depend on the (overridden) component priors.
+    # This ensures that we produce correct shapes in forecasting, where the
+    # shapes may have changed to include dimensions corresponding to posterior
+    # draws.
+
+    # Create a component model with no batch shape *except* in the initial state
+    # prior.
+    latent_size = 2
+    ssm = self._dummy_model(
+        latent_size=latent_size,
+        batch_shape=[],
+        initial_state_prior_batch_shape=[5, 5])
+
+    # If we override the initial state prior with an unbatched prior, the
+    # resulting AdditiveSSM should not have batch dimensions.
+    unbatched_initial_state_prior = tfd.MultivariateNormalDiag(
+        scale_diag=self._build_placeholder(np.ones([latent_size])))
+    additive_ssm = AdditiveStateSpaceModel(
+        [ssm], initial_state_prior=unbatched_initial_state_prior)
+
+    self.assertAllEqual(self.evaluate(additive_ssm.batch_shape_tensor()), [])
+
   def _build_placeholder(self, ndarray, dtype=None):
     """Convert a numpy array to a TF placeholder.
 
@@ -330,16 +384,20 @@ class _AdditiveStateSpaceModelTest(object):
     """
     dtype = dtype if dtype is not None else self.dtype
     ndarray = np.asarray(ndarray).astype(dtype)
-    return tf.placeholder_with_default(
+    return tf.compat.v1.placeholder_with_default(
         input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
   def _dummy_model(self,
                    num_timesteps=5,
                    batch_shape=None,
+                   initial_state_prior_batch_shape=None,
                    latent_size=2,
                    observation_size=1,
                    dtype=None):
     batch_shape = batch_shape if batch_shape is not None else []
+    initial_state_prior_batch_shape = (
+        initial_state_prior_batch_shape
+        if initial_state_prior_batch_shape is not None else batch_shape)
     dtype = dtype if dtype is not None else self.dtype
 
     return tfd.LinearGaussianStateSpaceModel(
@@ -351,22 +409,23 @@ class _AdditiveStateSpaceModelTest(object):
         observation_matrix=self._build_placeholder(np.random.standard_normal(
             batch_shape + [observation_size, latent_size]), dtype=dtype),
         observation_noise=tfd.MultivariateNormalDiag(
+            loc=self._build_placeholder(
+                np.ones(batch_shape + [observation_size]), dtype=dtype),
             scale_diag=self._build_placeholder(
                 np.ones(batch_shape + [observation_size]), dtype=dtype)),
         initial_state_prior=tfd.MultivariateNormalDiag(
             scale_diag=self._build_placeholder(
-                np.ones(batch_shape + [latent_size]), dtype=dtype)))
+                np.ones(initial_state_prior_batch_shape + [latent_size]),
+                dtype=dtype)))
 
 
 @test_util.run_all_in_graph_and_eager_modes
-class AdditiveStateSpaceModelTestStaticShape32(
-    tf.test.TestCase, _AdditiveStateSpaceModelTest):
+class AdditiveStateSpaceModelTestStaticShape32(_AdditiveStateSpaceModelTest):
   dtype = np.float32
   use_static_shape = True
 
 
-class AdditiveStateSpaceModelTestDynamicShape32(
-    tf.test.TestCase, _AdditiveStateSpaceModelTest):
+class AdditiveStateSpaceModelTestDynamicShape32(_AdditiveStateSpaceModelTest):
   dtype = np.float32
   use_static_shape = False
 
@@ -375,8 +434,8 @@ class AdditiveStateSpaceModelTestDynamicShape32(
     # (not necessarily the first) has static num_timesteps.
     num_timesteps = 4
     dynamic_timesteps_component = self._dummy_model(
-        num_timesteps=tf.placeholder_with_default(input=num_timesteps,
-                                                  shape=None))
+        num_timesteps=tf.compat.v1.placeholder_with_default(
+            input=num_timesteps, shape=None))
     static_timesteps_component = self._dummy_model(
         num_timesteps=num_timesteps)
 
@@ -386,14 +445,15 @@ class AdditiveStateSpaceModelTestDynamicShape32(
 
     additive_ssm = AdditiveStateSpaceModel([dynamic_timesteps_component,
                                             static_timesteps_component])
-    self.assertEqual(additive_ssm.num_timesteps, num_timesteps)
+    self.assertEqual(num_timesteps, self.evaluate(additive_ssm.num_timesteps))
 
 
 @test_util.run_all_in_graph_and_eager_modes
-class AdditiveStateSpaceModelTestStaticShape64(
-    tf.test.TestCase, _AdditiveStateSpaceModelTest):
+class AdditiveStateSpaceModelTestStaticShape64(_AdditiveStateSpaceModelTest):
   dtype = np.float64
   use_static_shape = True
 
+del _AdditiveStateSpaceModelTest  # Don't run tests for the base class.
+
 if __name__ == '__main__':
-  test.main()
+  tf.test.main()

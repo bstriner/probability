@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-"""Local Linear Trend State Space Model Tests."""
+"""Seasonal Model Tests."""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -24,11 +24,9 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability.python.sts import SeasonalStateSpaceModel
 
-from tensorflow.python.framework import test_util
-from tensorflow.python.platform import test
-
-tfl = tf.linalg
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
+tfl = tf.linalg
 
 
 class _SeasonalStateSpaceModelTest(object):
@@ -216,7 +214,7 @@ class _SeasonalStateSpaceModelTest(object):
     """
 
     ndarray = np.asarray(ndarray).astype(self.dtype)
-    return tf.placeholder_with_default(
+    return tf.compat.v1.placeholder_with_default(
         input=ndarray, shape=ndarray.shape if self.use_static_shape else None)
 
 
@@ -242,4 +240,4 @@ class SeasonalStateSpaceModelTestStaticShape64(
 
 
 if __name__ == "__main__":
-  test.main()
+  tf.test.main()

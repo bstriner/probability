@@ -18,16 +18,18 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import abc
+import functools
+import weakref
 
 # Dependency imports
 import numpy as np
-import six
 
 import tensorflow as tf
 
 from tensorflow_probability.python import bijectors as tfb
-from tensorflow.python.framework import test_util
+from tensorflow_probability.python import distributions as tfd
+
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -73,12 +75,14 @@ class BaseBijectorTest(tf.test.TestCase):
                                  "forward not implemented"):
       bij.forward(0)
 
-    with self.assertRaisesRegexp(NotImplementedError,
-                                 "inverse_log_det_jacobian not implemented"):
+    with self.assertRaisesRegexp(
+        NotImplementedError,
+        "Neither _forward_log_det_jacobian nor _inverse_log_det_jacobian.*"):
       bij.inverse_log_det_jacobian(0, event_ndims=0)
 
-    with self.assertRaisesRegexp(NotImplementedError,
-                                 "forward_log_det_jacobian not implemented"):
+    with self.assertRaisesRegexp(
+        NotImplementedError,
+        "Neither _forward_log_det_jacobian nor _inverse_log_det_jacobian.*"):
       bij.forward_log_det_jacobian(0, event_ndims=0)
 
 
@@ -86,144 +90,53 @@ class IntentionallyMissingError(Exception):
   pass
 
 
-class BrokenBijector(tfb.Bijector):
-  """Forward and inverse are not inverses of each other."""
+class ForwardOnlyBijector(tfb.Bijector):
+  """Bijector with no inverse methods at all."""
 
-  def __init__(self,
-               forward_missing=False,
-               inverse_missing=False,
-               validate_args=False):
-    super(BrokenBijector, self).__init__(
-        validate_args=validate_args, forward_min_event_ndims=0, name="broken")
-    self._forward_missing = forward_missing
-    self._inverse_missing = inverse_missing
+  def __init__(self, validate_args=False):
+    super(ForwardOnlyBijector, self).__init__(
+        validate_args=validate_args,
+        forward_min_event_ndims=0,
+        name="forward_only")
 
   def _forward(self, x):
-    if self._forward_missing:
-      raise IntentionallyMissingError
     return 2 * x
 
+  def _forward_log_det_jacobian(self, _):
+    return tf.math.log(2.)
+
+
+class InverseOnlyBijector(tfb.Bijector):
+  """Bijector with no forward methods at all."""
+
+  def __init__(self, validate_args=False):
+    super(InverseOnlyBijector, self).__init__(
+        validate_args=validate_args,
+        forward_min_event_ndims=0,
+        name="inverse_only")
+
   def _inverse(self, y):
-    if self._inverse_missing:
-      raise IntentionallyMissingError
     return y / 2.
 
-  def _inverse_log_det_jacobian(self, y):  # pylint:disable=unused-argument
-    if self._inverse_missing:
-      raise IntentionallyMissingError
-    return -tf.log(2.)
-
-  def _forward_log_det_jacobian(self, x):  # pylint:disable=unused-argument
-    if self._forward_missing:
-      raise IntentionallyMissingError
-    return tf.log(2.)
-
-
-@test_util.run_all_in_graph_and_eager_modes
-class BijectorTestEventNdims(tf.test.TestCase):
-
-  def assertRaisesError(self, msg):
-    return self.assertRaisesRegexp(Exception, msg)
-
-  def testBijectorNonIntegerEventNdims(self):
-    bij = BrokenBijector()
-    with self.assertRaisesRegexp(ValueError, "Expected integer"):
-      bij.forward_log_det_jacobian(1., event_ndims=1.5)
-    with self.assertRaisesRegexp(ValueError, "Expected integer"):
-      bij.inverse_log_det_jacobian(1., event_ndims=1.5)
-
-  def testBijectorArrayEventNdims(self):
-    bij = BrokenBijector()
-    with self.assertRaisesRegexp(ValueError, "Expected scalar"):
-      bij.forward_log_det_jacobian(1., event_ndims=(1, 2))
-    with self.assertRaisesRegexp(ValueError, "Expected scalar"):
-      bij.inverse_log_det_jacobian(1., event_ndims=(1, 2))
-
-  def testBijectorDynamicEventNdims(self):
-    with self.assertRaisesError("Expected scalar"):
-      bij = BrokenBijector(validate_args=True)
-      event_ndims = tf.placeholder_with_default((1, 2), shape=None)
-      self.evaluate(
-          bij.forward_log_det_jacobian(1., event_ndims=event_ndims))
-    with self.assertRaisesError("Expected scalar"):
-      bij = BrokenBijector(validate_args=True)
-      event_ndims = tf.placeholder_with_default((1, 2), shape=None)
-      self.evaluate(
-          bij.inverse_log_det_jacobian(1., event_ndims=event_ndims))
-
-
-@six.add_metaclass(abc.ABCMeta)
-class BijectorCachingTestBase(object):
-
-  @abc.abstractproperty
-  def broken_bijector_cls(self):
-    # return a BrokenBijector type Bijector, since this will test the caching.
-    raise IntentionallyMissingError("Not implemented")
-
-  def testCachingOfForwardResults(self):
-    broken_bijector = self.broken_bijector_cls(inverse_missing=True)
-    x = tf.constant(1.1)
-
-    # Call forward and forward_log_det_jacobian one-by-one (not together).
-    y = broken_bijector.forward(x)
-    _ = broken_bijector.forward_log_det_jacobian(x, event_ndims=0)
-
-    # Now, everything should be cached if the argument is y.
-    broken_bijector.inverse_log_det_jacobian(y, event_ndims=0)
-    try:
-      broken_bijector.inverse(y)
-      broken_bijector.inverse_log_det_jacobian(y, event_ndims=0)
-    except IntentionallyMissingError:
-      raise AssertionError("Tests failed! Cached values not used.")
-
-    # Different event_ndims should not be cached.
-    with self.assertRaises(IntentionallyMissingError):
-      broken_bijector.inverse_log_det_jacobian(y, event_ndims=1)
-
-  def testCachingOfInverseResults(self):
-    broken_bijector = self.broken_bijector_cls(forward_missing=True)
-    y = tf.constant(1.1)
-
-    # Call inverse and inverse_log_det_jacobian one-by-one (not together).
-    x = broken_bijector.inverse(y)
-    _ = broken_bijector.inverse_log_det_jacobian(y, event_ndims=0)
-
-    # Now, everything should be cached if the argument is x.
-    try:
-      broken_bijector.forward(x)
-      broken_bijector.forward_log_det_jacobian(x, event_ndims=0)
-    except IntentionallyMissingError:
-      raise AssertionError("Tests failed! Cached values not used.")
-
-    # Different event_ndims should not be cached.
-    with self.assertRaises(IntentionallyMissingError):
-      broken_bijector.forward_log_det_jacobian(x, event_ndims=1)
-
-
-@test_util.run_all_in_graph_and_eager_modes
-class BijectorCachingTest(BijectorCachingTestBase, tf.test.TestCase):
-  """Test caching with BrokenBijector."""
-
-  @property
-  def broken_bijector_cls(self):
-    return BrokenBijector
+  def _inverse_log_det_jacobian(self, _):
+    return -tf.math.log(2.)
 
 
 class ExpOnlyJacobian(tfb.Bijector):
   """Only used for jacobian calculations."""
 
-  def __init__(self, forward_min_event_ndims=0):
+  def __init__(self, validate_args=False, forward_min_event_ndims=0):
     super(ExpOnlyJacobian, self).__init__(
-        validate_args=False,
+        validate_args=validate_args,
         is_constant_jacobian=False,
         forward_min_event_ndims=forward_min_event_ndims,
         name="exp")
 
   def _inverse_log_det_jacobian(self, y):
-    return -tf.log(y)
+    return -tf.math.log(y)
 
   def _forward_log_det_jacobian(self, x):
-    return tf.log(x)
+    return tf.math.log(x)
 
 
 class ConstantJacobian(tfb.Bijector):
@@ -244,8 +157,103 @@ class ConstantJacobian(tfb.Bijector):
 
 
 @test_util.run_all_in_graph_and_eager_modes
+class BijectorTestEventNdims(tf.test.TestCase):
+
+  def assertRaisesError(self, msg):
+    return self.assertRaisesRegexp(Exception, msg)
+
+  def testBijectorNonIntegerEventNdims(self):
+    bij = ExpOnlyJacobian()
+    with self.assertRaisesRegexp(ValueError, "Expected integer"):
+      bij.forward_log_det_jacobian(1., event_ndims=1.5)
+    with self.assertRaisesRegexp(ValueError, "Expected integer"):
+      bij.inverse_log_det_jacobian(1., event_ndims=1.5)
+
+  def testBijectorArrayEventNdims(self):
+    bij = ExpOnlyJacobian()
+    with self.assertRaisesRegexp(ValueError, "Expected scalar"):
+      bij.forward_log_det_jacobian(1., event_ndims=(1, 2))
+    with self.assertRaisesRegexp(ValueError, "Expected scalar"):
+      bij.inverse_log_det_jacobian(1., event_ndims=(1, 2))
+
+  def testBijectorDynamicEventNdims(self):
+    with self.assertRaisesError("Expected scalar"):
+      bij = ExpOnlyJacobian(validate_args=True)
+      event_ndims = tf.compat.v1.placeholder_with_default((1, 2), shape=None)
+      self.evaluate(
+          bij.forward_log_det_jacobian(1., event_ndims=event_ndims))
+    with self.assertRaisesError("Expected scalar"):
+      bij = ExpOnlyJacobian(validate_args=True)
+      event_ndims = tf.compat.v1.placeholder_with_default((1, 2), shape=None)
+      self.evaluate(
+          bij.inverse_log_det_jacobian(1., event_ndims=event_ndims))
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class BijectorCachingTest(tf.test.TestCase):
+
+  def testCachingOfForwardResults(self):
+    forward_only_bijector = ForwardOnlyBijector()
+    x = tf.constant(1.1)
+    y = tf.constant(2.2)
+
+    with self.assertRaises(NotImplementedError):
+      forward_only_bijector.inverse(y)
+
+    with self.assertRaises(NotImplementedError):
+      forward_only_bijector.inverse_log_det_jacobian(y, event_ndims=0)
+
+    # Call forward and forward_log_det_jacobian one-by-one (not together).
+    y = forward_only_bijector.forward(x)
+    _ = forward_only_bijector.forward_log_det_jacobian(x, event_ndims=0)
+    if tf.executing_eagerly():
+      self.assertIsNot(y, forward_only_bijector.forward(x))
+    else:
+      self.assertIs(y, forward_only_bijector.forward(x))
+
+    # Now, everything should be cached if the argument is y, so these are ok.
+    forward_only_bijector.inverse(y)
+    forward_only_bijector.inverse_log_det_jacobian(y, event_ndims=0)
+
+  def testCachingOfInverseResults(self):
+    inverse_only_bijector = InverseOnlyBijector()
+    x = tf.constant(1.1)
+    y = tf.constant(2.2)
+
+    with self.assertRaises(NotImplementedError):
+      inverse_only_bijector.forward(x)
+
+    with self.assertRaises(NotImplementedError):
+      inverse_only_bijector.forward_log_det_jacobian(x, event_ndims=0)
+
+    # Call inverse and inverse_log_det_jacobian one-by-one (not together).
+    x = inverse_only_bijector.inverse(y)
+    _ = inverse_only_bijector.inverse_log_det_jacobian(y, event_ndims=0)
+    if tf.executing_eagerly():
+      self.assertIsNot(x, inverse_only_bijector.inverse(y))
+    else:
+      self.assertIs(x, inverse_only_bijector.inverse(y))
+
+    # Now, everything should be cached if the argument is x.
+    inverse_only_bijector.forward(x)
+    inverse_only_bijector.forward_log_det_jacobian(x, event_ndims=0)
+
+  def testCachingGarbageCollection(self):
+    bijector = ForwardOnlyBijector()
+    refs = []
+    niters = 3
+    for _ in range(niters):
+      y = bijector.forward(tf.zeros([10]))
+      refs.append(weakref.ref(y))
+
+    # We tolerate leaking tensor references in graph mode only.
+    expected_live = 1 if tf.executing_eagerly() else niters
+    self.assertEqual(expected_live, sum(ref() is not None for ref in refs))
+
+
+@test_util.run_all_in_graph_and_eager_modes
 class BijectorReduceEventDimsTest(tf.test.TestCase):
-  """Test caching with BrokenBijector."""
+  """Test reducing of event dims."""
 
   def testReduceEventNdimsForward(self):
     x = [[[1., 2.], [3., 4.]]]
@@ -307,13 +315,85 @@ class BijectorReduceEventDimsTest(tf.test.TestCase):
 
   def testHandlesNonStaticEventNdims(self):
     x_ = [[[1., 2.], [3., 4.]]]
-    x = tf.placeholder_with_default(x_, shape=None)
-    event_ndims = tf.placeholder_with_default(1, shape=None)
+    x = tf.compat.v1.placeholder_with_default(x_, shape=None)
+    event_ndims = tf.compat.v1.placeholder_with_default(1, shape=None)
     bij = ExpOnlyJacobian(forward_min_event_ndims=1)
     bij.inverse_log_det_jacobian(x, event_ndims=event_ndims)
     ildj = self.evaluate(
         bij.inverse_log_det_jacobian(x, event_ndims=event_ndims))
     self.assertAllClose(-np.log(x_), ildj)
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class BijectorCompositionTest(tf.test.TestCase):
+
+  def testComposeFromChainBijector(self):
+    x = tf.constant([-5., 0., 5.])
+    sigmoid = functools.reduce(lambda chain, f: chain(f), [
+        tfb.Reciprocal(),
+        tfb.AffineScalar(shift=1.),
+        tfb.Exp(),
+        tfb.AffineScalar(scale=-1.),
+    ])
+    self.assertTrue(isinstance(sigmoid, tfb.Chain))
+    self.assertAllClose(
+        *self.evaluate([tf.nn.sigmoid(x), sigmoid.forward(x)]),
+        atol=0, rtol=1e-3)
+
+  def testComposeFromTransformedDistribution(self):
+    actual_log_normal = tfb.Exp()(tfd.TransformedDistribution(
+        distribution=tfd.Normal(0, 1),
+        bijector=tfb.AffineScalar(shift=0.5, scale=2.)))
+    expected_log_normal = tfd.LogNormal(0.5, 2.)
+    x = tf.constant([0.1, 1., 5.])
+    self.assertAllClose(
+        *self.evaluate([actual_log_normal.log_prob(x),
+                        expected_log_normal.log_prob(x)]),
+        atol=0, rtol=1e-3)
+
+  def testComposeFromNonTransformedDistribution(self):
+    actual_log_normal = tfb.Exp()(tfd.Normal(0.5, 2.))
+    expected_log_normal = tfd.LogNormal(0.5, 2.)
+    x = tf.constant([0.1, 1., 5.])
+    self.assertAllClose(
+        *self.evaluate([actual_log_normal.log_prob(x),
+                        expected_log_normal.log_prob(x)]),
+        atol=0, rtol=1e-3)
+
+  def testComposeFromTensor(self):
+    x = tf.constant([-5., 0., 5.])
+    self.assertAllClose(
+        *self.evaluate([tf.exp(x), tfb.Exp()(x)]),
+        atol=0, rtol=1e-3)
+
+  def testHandlesKwargs(self):
+    x = tfb.Exp()(tfd.Normal(0, 1), event_shape=[4])
+    y = tfd.Independent(tfd.LogNormal(tf.zeros(4), 1), 1)
+    z = tf.constant([[1., 2, 3, 4],
+                     [0.5, 1.5, 2., 2.5]])
+    self.assertAllClose(
+        *self.evaluate([y.log_prob(z), x.log_prob(z)]),
+        atol=0, rtol=1e-3)
+
+
+class BijectorLDJCachingTest(tf.test.TestCase):
+
+  def testShapeCachingIssue(self):
+    if tf.executing_eagerly(): return
+    # Exercise the scenario outlined in
+    # https://github.com/tensorflow/probability/issues/253 (originally reported
+    # internally as b/119756336).
+    x1 = tf.compat.v1.placeholder(tf.float32, shape=[None, 2], name="x1")
+    x2 = tf.compat.v1.placeholder(tf.float32, shape=[None, 2], name="x2")
+
+    bij = ConstantJacobian()
+
+    bij.forward_log_det_jacobian(x2, event_ndims=1)
+    a = bij.forward_log_det_jacobian(x1, event_ndims=1, name="a_fldj")
+
+    x1_value = np.random.uniform(size=[10, 2])
+    with self.test_session() as sess:
+      sess.run(a, feed_dict={x1: x1_value})
 
 
 if __name__ == "__main__":

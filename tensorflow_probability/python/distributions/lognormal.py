@@ -20,7 +20,7 @@ from __future__ import print_function
 
 import numpy as np
 import tensorflow as tf
-from tensorflow_probability.python import bijectors
+from tensorflow_probability.python.bijectors import exp as exp_bijector
 from tensorflow_probability.python.distributions import normal
 from tensorflow_probability.python.distributions import transformed_distribution
 from tensorflow_probability.python.internal import dtype_util
@@ -61,15 +61,21 @@ class LogNormal(transformed_distribution.TransformedDistribution):
         undefined statistics will return NaN for this statistic.
       name: The name to give Ops created by the initializer.
     """
-    with tf.name_scope(name, values=[loc, scale]) as name:
+    parameters = dict(locals())
+    with tf.compat.v1.name_scope(name, values=[loc, scale]) as name:
       dtype = dtype_util.common_dtype([loc, scale], tf.float32)
       super(LogNormal, self).__init__(
           distribution=normal.Normal(
-              loc=tf.convert_to_tensor(loc, name="loc", dtype=dtype),
-              scale=tf.convert_to_tensor(scale, name="scale", dtype=dtype)),
-          bijector=bijectors.Exp(),
+              loc=tf.convert_to_tensor(value=loc, name="loc", dtype=dtype),
+              scale=tf.convert_to_tensor(
+                  value=scale, name="scale", dtype=dtype)),
+          bijector=exp_bijector.Exp(),
           validate_args=validate_args,
+          parameters=parameters,
           name=name)
+
+  def _params_event_ndims(self):
+    return dict(loc=0, scale=0)
 
   @property
   def loc(self):
@@ -86,7 +92,7 @@ class LogNormal(transformed_distribution.TransformedDistribution):
 
   def _variance(self):
     variance = self.distribution.variance()
-    return (tf.expm1(variance) *
+    return (tf.math.expm1(variance) *
             tf.exp(2. * self.distribution.mean() + variance))
 
   def _mode(self):
@@ -94,5 +100,4 @@ class LogNormal(transformed_distribution.TransformedDistribution):
 
   def _entropy(self):
     return (self.distribution.mean() + 0.5 +
-            tf.log(self.distribution.stddev()) +
-            0.5 * np.log(2 * np.pi))
+            tf.math.log(self.distribution.stddev()) + 0.5 * np.log(2 * np.pi))

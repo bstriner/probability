@@ -22,7 +22,9 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
-from tensorflow_probability.python import bijectors
+from tensorflow_probability.python.bijectors import gumbel as gumbel_bijector
+from tensorflow_probability.python.bijectors import invert as invert_bijector
+from tensorflow_probability.python.distributions import kullback_leibler
 from tensorflow_probability.python.distributions import transformed_distribution
 from tensorflow_probability.python.distributions import uniform
 from tensorflow_probability.python.internal import distribution_util
@@ -37,7 +39,7 @@ class Gumbel(transformed_distribution.TransformedDistribution):
   The probability density function (pdf) of this distribution is,
 
   ```none
-  pdf(x; mu, sigma) = exp(-(x - mu) / sigma - exp(-(x - mu) / sigma))
+  pdf(x; mu, sigma) = exp(-(x - mu) / sigma - exp(-(x - mu) / sigma)) / sigma
   ```
 
   where `loc = mu` and `scale = sigma`.
@@ -125,35 +127,44 @@ class Gumbel(transformed_distribution.TransformedDistribution):
     Raises:
       TypeError: if loc and scale are different dtypes.
     """
-    with tf.name_scope(name, values=[loc, scale]) as name:
+    parameters = dict(locals())
+    with tf.compat.v1.name_scope(name, values=[loc, scale]) as name:
       dtype = dtype_util.common_dtype([loc, scale], preferred_dtype=tf.float32)
-      loc = tf.convert_to_tensor(loc, name="loc", dtype=dtype)
-      scale = tf.convert_to_tensor(scale, name="scale", dtype=dtype)
-      with tf.control_dependencies([tf.assert_positive(scale)]
-                                   if validate_args else []):
+      loc = tf.convert_to_tensor(value=loc, name="loc", dtype=dtype)
+      scale = tf.convert_to_tensor(value=scale, name="scale", dtype=dtype)
+      with tf.control_dependencies(
+          [tf.compat.v1.assert_positive(scale)] if validate_args else []):
         loc = tf.identity(loc, name="loc")
         scale = tf.identity(scale, name="scale")
-        tf.assert_same_float_dtype([loc, scale])
-        self._gumbel_bijector = bijectors.Gumbel(
+        tf.debugging.assert_same_float_dtype([loc, scale])
+        self._gumbel_bijector = gumbel_bijector.Gumbel(
             loc=loc, scale=scale, validate_args=validate_args)
 
+      # Because the uniform sampler generates samples in `[0, 1)` this would
+      # cause samples to lie in `(inf, -inf]` instead of `(inf, -inf)`. To fix
+      # this, we use `np.finfo(self.dtype.as_numpy_dtype.tiny`
+      # because it is the smallest, positive, "normal" number.
       super(Gumbel, self).__init__(
           distribution=uniform.Uniform(
-              low=tf.zeros([], dtype=loc.dtype),
+              low=np.finfo(dtype.as_numpy_dtype).tiny,
               high=tf.ones([], dtype=loc.dtype),
               allow_nan_stats=allow_nan_stats),
           # The Gumbel bijector encodes the quantile
           # function as the forward, and hence needs to
           # be inverted.
-          bijector=bijectors.Invert(self._gumbel_bijector),
+          bijector=invert_bijector.Invert(self._gumbel_bijector),
           batch_shape=distribution_util.get_broadcast_shape(loc, scale),
+          parameters=parameters,
           name=name)
 
   @staticmethod
   def _param_shapes(sample_shape):
     return dict(
         zip(("loc", "scale"),
-            ([tf.convert_to_tensor(sample_shape, dtype=tf.int32)] * 2)))
+            ([tf.convert_to_tensor(value=sample_shape, dtype=tf.int32)] * 2)))
+
+  def _params_event_ndims(self):
+    return dict(loc=0, scale=0)
 
   @property
   def loc(self):
@@ -168,7 +179,11 @@ class Gumbel(transformed_distribution.TransformedDistribution):
   def _entropy(self):
     # Use broadcasting rules to calculate the full broadcast sigma.
     scale = self.scale * tf.ones_like(self.loc)
-    return 1. + tf.log(scale) + np.euler_gamma
+    return 1. + tf.math.log(scale) + np.euler_gamma
+
+  def _log_prob(self, x):
+    z = (x - self.loc) / self.scale
+    return -(z + tf.exp(-z)) - tf.math.log(self.scale)
 
   def _mean(self):
     return self.loc + self.scale * np.euler_gamma
@@ -178,3 +193,31 @@ class Gumbel(transformed_distribution.TransformedDistribution):
 
   def _mode(self):
     return self.loc * tf.ones_like(self.scale)
+
+
+@kullback_leibler.RegisterKL(Gumbel, Gumbel)
+def _kl_gumbel_gumbel(a, b, name=None):
+  """Calculate the batched KL divergence KL(a || b) with a and b Gumbel.
+
+  Args:
+    a: instance of a Gumbel distribution object.
+    b: instance of a Gumbel distribution object.
+    name: (optional) Name to use for created operations.
+      default is "kl_gumbel_gumbel".
+
+  Returns:
+    Batchwise KL(a || b)
+  """
+  with tf.compat.v1.name_scope(name, "kl_gumbel_gumbel",
+                               [a.loc, b.loc, a.scale, b.scale]):
+    # Consistent with
+    # http://www.mast.queensu.ca/~communications/Papers/gil-msc11.pdf, page 64
+    # The paper uses beta to refer to scale and mu to refer to loc.
+    # There is actually an error in the solution as printed; this is based on
+    # the second-to-last step of the derivation. The value as printed would be
+    # off by (a.loc - b.loc) / b.scale.
+    return (tf.math.log(b.scale) - tf.math.log(a.scale) + np.euler_gamma *
+            (a.scale / b.scale - 1.) +
+            tf.math.expm1((b.loc - a.loc) / b.scale +
+                          tf.math.lgamma(a.scale / b.scale + 1.)) +
+            (a.loc - b.loc) / b.scale)

@@ -24,7 +24,7 @@ import tensorflow as tf
 from tensorflow_probability.python import bijectors as tfb
 
 from tensorflow_probability.python.bijectors import bijector_test_util
-from tensorflow.python.framework import test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 class ShapeChanging(tfb.Bijector):
@@ -183,7 +183,7 @@ class ChainBijectorTest(tf.test.TestCase):
 
   def testChainIldjWithPlaceholder(self):
     chain = tfb.Chain((tfb.Exp(), tfb.Exp()))
-    samples = tf.placeholder_with_default(
+    samples = tf.compat.v1.placeholder_with_default(
         np.zeros([2, 10], np.float32), shape=None)
     ildj = chain.inverse_log_det_jacobian(samples, event_ndims=0)
     self.assertTrue(ildj is not None)

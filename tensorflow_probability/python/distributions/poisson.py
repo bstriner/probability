@@ -18,12 +18,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 from tensorflow_probability.python.distributions import distribution
 from tensorflow_probability.python.internal import distribution_util
 from tensorflow_probability.python.internal import dtype_util
 from tensorflow_probability.python.internal import reparameterization
-from tensorflow.python.framework import tensor_shape
 
 __all__ = [
     "Poisson",
@@ -51,6 +51,7 @@ class Poisson(distribution.Distribution):
   def __init__(self,
                rate=None,
                log_rate=None,
+               interpolate_nondiscrete=True,
                validate_args=False,
                allow_nan_stats=True,
                name="Poisson"):
@@ -61,14 +62,23 @@ class Poisson(distribution.Distribution):
         Must specify exactly one of `rate` and `log_rate`.
       log_rate: Floating point tensor, the log of the rate parameter.
         Must specify exactly one of `rate` and `log_rate`.
-      validate_args: Python `bool`, default `False`. When `True` distribution
+      interpolate_nondiscrete: Python `bool`. When `False`,
+        `log_prob` returns `-inf` (and `prob` returns `0`) for non-integer
+        inputs. When `True`, `log_prob` evaluates the continuous function
+        `k * log_rate - lgamma(k+1) - rate`, which matches the Poisson pmf
+        at integer arguments `k` (note that this function is not itself
+        a normalized probability log-density).
+        Default value: `True`.
+      validate_args: Python `bool`. When `True` distribution
         parameters are checked for validity despite possibly degrading runtime
         performance. When `False` invalid inputs may silently render incorrect
         outputs.
-      allow_nan_stats: Python `bool`, default `True`. When `True`, statistics
+        Default value: `False`.
+      allow_nan_stats: Python `bool`. When `True`, statistics
         (e.g., mean, mode, variance) use the value "`NaN`" to indicate the
         result is undefined. When `False`, an exception is raised if one or
         more of the statistic's batch members are undefined.
+        Default value: `True`.
       name: Python `str` name prefixed to Ops created by this class.
 
     Raises:
@@ -77,31 +87,33 @@ class Poisson(distribution.Distribution):
       TypeError: if `log_rate` is not a float-type.
     """
     parameters = dict(locals())
-    with tf.name_scope(name, values=[rate]) as name:
+    with tf.compat.v1.name_scope(name, values=[rate]) as name:
       if (rate is None) == (log_rate is None):
         raise ValueError("Must specify exactly one of `rate` and `log_rate`.")
       elif log_rate is None:
         rate = tf.convert_to_tensor(
-            rate,
+            value=rate,
             name="rate",
             dtype=dtype_util.common_dtype([rate], preferred_dtype=tf.float32))
         if not rate.dtype.is_floating:
           raise TypeError("rate.dtype ({}) is a not a float-type.".format(
               rate.dtype.name))
-        with tf.control_dependencies([tf.assert_positive(rate)]
-                                     if validate_args else []):
+        with tf.control_dependencies(
+            [tf.compat.v1.assert_positive(rate)] if validate_args else []):
           self._rate = tf.identity(rate, name="rate")
-          self._log_rate = tf.log(rate, name="log_rate")
+          self._log_rate = tf.math.log(rate, name="log_rate")
       else:
         log_rate = tf.convert_to_tensor(
-            log_rate,
+            value=log_rate,
             name="log_rate",
             dtype=dtype_util.common_dtype([log_rate], tf.float32))
         if not log_rate.dtype.is_floating:
           raise TypeError("log_rate.dtype ({}) is a not a float-type.".format(
               log_rate.dtype.name))
         self._rate = tf.exp(log_rate, name="rate")
-        self._log_rate = tf.convert_to_tensor(log_rate, name="log_rate")
+        self._log_rate = tf.convert_to_tensor(value=log_rate, name="log_rate")
+
+    self._interpolate_nondiscrete = interpolate_nondiscrete
     super(Poisson, self).__init__(
         dtype=self._rate.dtype,
         reparameterization_type=reparameterization.NOT_REPARAMETERIZED,
@@ -110,6 +122,9 @@ class Poisson(distribution.Distribution):
         parameters=parameters,
         graph_parents=[self._rate],
         name=name)
+
+  def _params_event_ndims(self):
+    return dict(rate=0, log_rate=0)
 
   @property
   def rate(self):
@@ -121,8 +136,13 @@ class Poisson(distribution.Distribution):
     """Log rate parameter."""
     return self._log_rate
 
+  @property
+  def interpolate_nondiscrete(self):
+    """Interpolate (log) probs on non-integer inputs."""
+    return self._interpolate_nondiscrete
+
   def _batch_shape_tensor(self):
-    return tf.shape(self.rate)
+    return tf.shape(input=self.rate)
 
   def _batch_shape(self):
     return self.rate.shape
@@ -131,37 +151,44 @@ class Poisson(distribution.Distribution):
     return tf.constant([], dtype=tf.int32)
 
   def _event_shape(self):
-    return tensor_shape.scalar()
+    return tf.TensorShape([])
 
   def _log_prob(self, x):
-    # The log-probability at negative and non-integer points is -inf.
-    # Catch such xs and set the output value accordingly.
-    n = tf.maximum(tf.floor(x), 0.)
-    log_prob = self._log_unnormalized_prob(n) - self._log_normalization()
-    zero_prob = tf.less(x, 0.) | tf.not_equal(x, tf.floor(x))
-    return tf.where(tf.broadcast_to(zero_prob, tf.shape(log_prob)),
-                    float("-inf") + tf.zeros_like(log_prob),
-                    log_prob)
+    log_probs = self._log_unnormalized_prob(x) - self._log_normalization()
+    if not self.interpolate_nondiscrete:
+      # Ensure the gradient wrt `rate` is zero at non-integer points.
+      neg_inf = tf.fill(
+          tf.shape(input=log_probs),
+          value=np.array(-np.inf, dtype=log_probs.dtype.as_numpy_dtype))
+      log_probs = tf.where(tf.math.is_inf(log_probs), neg_inf, log_probs)
+    return log_probs
 
   def _log_cdf(self, x):
-    return tf.log(self.cdf(x))
+    return tf.math.log(self.cdf(x))
 
   def _cdf(self, x):
     # CDF is the probability that the Poisson variable is less or equal to x.
     # For fractional x, the CDF is equal to the CDF at n = floor(x).
     # For negative x, the CDF is zero, but tf.igammac gives NaNs, so we impute
     # the values and handle this case explicitly.
-    n = tf.maximum(tf.floor(x), 0.)
-    cdf = tf.igammac(1. + n, self.rate)
-    return tf.where(tf.broadcast_to(tf.less(x, 0.), tf.shape(cdf)),
-                    tf.zeros_like(cdf),
-                    cdf)
+    safe_x = tf.maximum(x if self.interpolate_nondiscrete else tf.floor(x), 0.)
+    cdf = tf.math.igammac(1. + safe_x, self.rate)
+    return tf.where(
+        tf.broadcast_to(x < 0., tf.shape(input=cdf)), tf.zeros_like(cdf), cdf)
 
   def _log_normalization(self):
     return self.rate
 
   def _log_unnormalized_prob(self, x):
-    return x * self.log_rate - tf.lgamma(1. + x)
+    # The log-probability at negative points is always -inf.
+    # Catch such x's and set the output value accordingly.
+    safe_x = tf.maximum(x if self.interpolate_nondiscrete else tf.floor(x), 0.)
+    y = safe_x * self.log_rate - tf.math.lgamma(1. + safe_x)
+    is_supported = tf.broadcast_to(tf.equal(x, safe_x), tf.shape(input=y))
+    neg_inf = tf.fill(
+        tf.shape(input=y),
+        value=np.array(-np.inf, dtype=y.dtype.as_numpy_dtype))
+    return tf.where(is_supported, y, neg_inf)
 
   def _mean(self):
     return tf.identity(self.rate)
@@ -176,4 +203,5 @@ class Poisson(distribution.Distribution):
     return tf.floor(self.rate)
 
   def _sample_n(self, n, seed=None):
-    return tf.random_poisson(self.rate, [n], dtype=self.dtype, seed=seed)
+    return tf.random.poisson(
+        lam=self.rate, shape=[n], dtype=self.dtype, seed=seed)

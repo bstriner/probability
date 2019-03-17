@@ -25,9 +25,24 @@ from tensorflow_probability.python import bijectors as tfb
 from tensorflow_probability.python import distributions as tfd
 
 from tensorflow_probability.python.bijectors.masked_autoregressive import _gen_mask
-from tensorflow_probability.python.internal import test_util
+from tensorflow_probability.python.internal import test_util as tfp_test_util
+
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
+def masked_autoregressive_2d_template(base_template, event_shape):
+
+  def wrapper(x):
+    x_flat = tf.reshape(
+        x, tf.concat([tf.shape(input=x)[:-len(event_shape)], [-1]], -1))
+    x_shift, x_log_scale = base_template(x_flat)
+    return tf.reshape(x_shift, tf.shape(input=x)), tf.reshape(
+        x_log_scale, tf.shape(input=x))
+
+  return wrapper
+
+
+@test_util.run_all_in_graph_and_eager_modes
 class GenMaskTest(tf.test.TestCase):
 
   def test346Exclusive(self):
@@ -53,8 +68,11 @@ class GenMaskTest(tf.test.TestCase):
     self.assertAllEqual(expected_mask, mask)
 
 
-class MaskedAutoregressiveFlowTest(test_util.VectorDistributionTestHelpers,
+@test_util.run_all_in_graph_and_eager_modes
+class MaskedAutoregressiveFlowTest(tfp_test_util.VectorDistributionTestHelpers,
                                    tf.test.TestCase):
+
+  event_shape = [4]
 
   @property
   def _autoregressive_flow_kwargs(self):
@@ -66,70 +84,116 @@ class MaskedAutoregressiveFlowTest(test_util.VectorDistributionTestHelpers,
             False,
     }
 
-  def testBijector(self):
-    x_ = np.arange(3 * 4 * 2).astype(np.float32).reshape(3, 4, 2)
+  def testNonBatchedBijector(self):
+    x_ = np.arange(np.prod(self.event_shape)).astype(
+        np.float32).reshape(self.event_shape)
     ma = tfb.MaskedAutoregressiveFlow(
         validate_args=True, **self._autoregressive_flow_kwargs)
     x = tf.constant(x_)
     forward_x = ma.forward(x)
     # Use identity to invalidate cache.
     inverse_y = ma.inverse(tf.identity(forward_x))
-    fldj = ma.forward_log_det_jacobian(x, event_ndims=1)
+    forward_inverse_y = ma.forward(inverse_y)
+    fldj = ma.forward_log_det_jacobian(x, event_ndims=len(self.event_shape))
     # Use identity to invalidate cache.
-    ildj = ma.inverse_log_det_jacobian(tf.identity(forward_x), event_ndims=1)
-    self.evaluate(tf.global_variables_initializer())
+    ildj = ma.inverse_log_det_jacobian(
+        tf.identity(forward_x), event_ndims=len(self.event_shape))
+    self.evaluate(tf.compat.v1.global_variables_initializer())
     [
         forward_x_,
         inverse_y_,
+        forward_inverse_y_,
         ildj_,
         fldj_,
     ] = self.evaluate([
         forward_x,
         inverse_y,
+        forward_inverse_y,
         ildj,
         fldj,
     ])
     self.assertEqual("masked_autoregressive_flow", ma.name)
-    self.assertAllClose(forward_x_, forward_x_, rtol=1e-6, atol=0.)
+    self.assertAllClose(forward_x_, forward_inverse_y_, rtol=1e-6, atol=0.)
     self.assertAllClose(x_, inverse_y_, rtol=1e-5, atol=0.)
     self.assertAllClose(ildj_, -fldj_, rtol=1e-6, atol=0.)
 
-  def testMutuallyConsistent(self):
-    dims = 4
+  def testBatchedBijector(self):
+    x_ = np.arange(4 * np.prod(self.event_shape)).astype(
+        np.float32).reshape([4] + self.event_shape)
     ma = tfb.MaskedAutoregressiveFlow(
         validate_args=True, **self._autoregressive_flow_kwargs)
+    x = tf.constant(x_)
+    forward_x = ma.forward(x)
+    # Use identity to invalidate cache.
+    inverse_y = ma.inverse(tf.identity(forward_x))
+    forward_inverse_y = ma.forward(inverse_y)
+    fldj = ma.forward_log_det_jacobian(x, event_ndims=len(self.event_shape))
+    # Use identity to invalidate cache.
+    ildj = ma.inverse_log_det_jacobian(
+        tf.identity(forward_x), event_ndims=len(self.event_shape))
+    self.evaluate(tf.compat.v1.global_variables_initializer())
+    [
+        forward_x_,
+        inverse_y_,
+        forward_inverse_y_,
+        ildj_,
+        fldj_,
+    ] = self.evaluate([
+        forward_x,
+        inverse_y,
+        forward_inverse_y,
+        ildj,
+        fldj,
+    ])
+    self.assertEqual("masked_autoregressive_flow", ma.name)
+    self.assertAllClose(forward_x_, forward_inverse_y_, rtol=1e-6, atol=1e-6)
+    self.assertAllClose(x_, inverse_y_, rtol=1e-4, atol=1e-4)
+    self.assertAllClose(ildj_, -fldj_, rtol=1e-6, atol=1e-6)
+
+  def testMutuallyConsistent(self):
+    maf = tfb.MaskedAutoregressiveFlow(
+        validate_args=True, **self._autoregressive_flow_kwargs)
+    base = tfd.Independent(
+        tfd.Normal(loc=tf.zeros(self.event_shape), scale=1.),
+        reinterpreted_batch_ndims=len(self.event_shape))
+    reshape = tfb.Reshape(
+        event_shape_out=[np.prod(self.event_shape)],
+        event_shape_in=self.event_shape)
+    bijector = tfb.Chain([reshape, maf])
     dist = tfd.TransformedDistribution(
-        distribution=tfd.Normal(loc=0., scale=1.),
-        bijector=ma,
-        event_shape=[dims],
-        validate_args=True)
+        distribution=base, bijector=bijector, validate_args=True)
     self.run_test_sample_consistent_log_prob(
         sess_run_fn=self.evaluate,
         dist=dist,
-        num_samples=int(1e5),
+        num_samples=int(1e6),
         radius=1.,
         center=0.,
-        rtol=0.02)
+        rtol=0.025)
 
   def testInvertMutuallyConsistent(self):
-    dims = 4
-    ma = tfb.Invert(
+    maf = tfb.Invert(
         tfb.MaskedAutoregressiveFlow(
             validate_args=True, **self._autoregressive_flow_kwargs))
+    base = tfd.Independent(
+        tfd.Normal(loc=tf.zeros(self.event_shape), scale=1.),
+        reinterpreted_batch_ndims=len(self.event_shape))
+    reshape = tfb.Reshape(
+        event_shape_out=[np.prod(self.event_shape)],
+        event_shape_in=self.event_shape)
+    bijector = tfb.Chain([reshape, maf])
     dist = tfd.TransformedDistribution(
-        distribution=tfd.Normal(loc=0., scale=1.),
-        bijector=ma,
-        event_shape=[dims],
-        validate_args=True)
+        distribution=base, bijector=bijector, validate_args=True)
+
     self.run_test_sample_consistent_log_prob(
         sess_run_fn=self.evaluate,
         dist=dist,
-        num_samples=int(1e5),
+        num_samples=int(1e6),
         radius=1.,
         center=0.,
-        rtol=0.02)
+        rtol=0.025)
 
 
+@test_util.run_all_in_graph_and_eager_modes
 class MaskedAutoregressiveFlowShiftOnlyTest(MaskedAutoregressiveFlowTest):
 
   @property
@@ -143,6 +207,7 @@ class MaskedAutoregressiveFlowShiftOnlyTest(MaskedAutoregressiveFlowTest):
     }
 
 
+@test_util.run_all_in_graph_and_eager_modes
 class MaskedAutoregressiveFlowUnrollLoopTest(MaskedAutoregressiveFlowTest):
 
   @property
@@ -155,6 +220,25 @@ class MaskedAutoregressiveFlowUnrollLoopTest(MaskedAutoregressiveFlowTest):
             False,
         "unroll_loop":
             True,
+    }
+
+
+@test_util.run_all_in_graph_and_eager_modes
+class MaskedAutoregressive2DTest(MaskedAutoregressiveFlowTest):
+  event_shape = [3, 2]
+
+  @property
+  def _autoregressive_flow_kwargs(self):
+    return {
+        "shift_and_log_scale_fn":
+            masked_autoregressive_2d_template(
+                tfb.masked_autoregressive_default_template(
+                    hidden_layers=[np.prod(self.event_shape)],
+                    shift_only=False), self.event_shape),
+        "is_constant_jacobian":
+            False,
+        "event_ndims":
+            2,
     }
 
 

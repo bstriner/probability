@@ -19,19 +19,24 @@ from __future__ import division
 from __future__ import print_function
 
 # Dependency imports
+from absl.testing import parameterized
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
 from tensorflow_probability.python.distributions.internal import statistical_testing as st
-from tensorflow.python.framework import test_util
-from tensorflow.python.platform import test
-
+from tensorflow_probability.python.internal import test_util as tfp_test_util
 tfd = tfp.distributions
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
-def _det_ok_mask(x, det_bounds):
-  _, logdet = tf.linalg.slogdet(x)
+def _det_ok_mask(x, det_bounds, input_output_cholesky=False):
+  if input_output_cholesky:
+    logdet = 2.0 * tf.reduce_sum(
+        input_tensor=tf.math.log(tf.linalg.diag_part(x)), axis=[-1])
+  else:
+    _, logdet = tf.linalg.slogdet(x)
+
   return tf.cast(tf.exp(logdet) > det_bounds, dtype=x.dtype)
 
 # Each leaf entry here is a confidence interval for the volume of some
@@ -65,16 +70,17 @@ volume_bounds = {
 
 
 @test_util.run_all_in_graph_and_eager_modes
-class LKJTest(test.TestCase):
+@parameterized.parameters(np.float32, np.float64)
+class LKJTest(parameterized.TestCase, tf.test.TestCase):
 
-  def testNormConst2D(self):
+  def testNormConst2D(self, dtype):
     expected = 2.
     # 2x2 correlation matrices are determined by one number between -1
     # and 1, so the volume of density 1 over all of them is 2.
-    answer = self.evaluate(tfd.LKJ(2, [1.])._log_normalization())
+    answer = self.evaluate(tfd.LKJ(2, dtype([1.]))._log_normalization())
     self.assertAllClose(answer, np.log([expected]))
 
-  def testNormConst3D(self):
+  def testNormConst3D(self, dtype):
     expected = np.pi**2 / 2.
     # 3x3 correlation matrices are determined by the three
     # lower-triangular entries.  In addition to being between -1 and
@@ -86,19 +92,26 @@ class LKJTest(test.TestCase):
     # is also obtained by Rousseeuw, P. J., & Molenberghs,
     # G. (1994). "The shape of correlation matrices." The American
     # Statistician, 48(4), 276-279.
-    answer = self.evaluate(tfd.LKJ(3, [1.])._log_normalization())
+    answer = self.evaluate(tfd.LKJ(3, dtype([1.]))._log_normalization())
     self.assertAllClose(answer, np.log([expected]))
 
-  def _testSampleLogProbExact(
-      self, concentrations, det_bounds, dim, means,
-      num_samples=int(1e5), target_discrepancy=0.1, seed=42):
+  def _testSampleLogProbExact(self,
+                              concentrations,
+                              det_bounds,
+                              dim,
+                              means,
+                              num_samples=int(1e5),
+                              dtype=np.float32,
+                              target_discrepancy=0.1,
+                              input_output_cholesky=False,
+                              seed=42):
     # For test methodology see the comment in
     # _testSampleConsistentLogProbInterval, except that this test
     # checks those parameter settings where the true volume is known
     # analytically.
-    concentration = np.array(concentrations, dtype=np.float32)
-    det_bounds = np.array(det_bounds, dtype=np.float32)
-    means = np.array(means, dtype=np.float32)
+    concentration = np.array(concentrations, dtype=dtype)
+    det_bounds = np.array(det_bounds, dtype=dtype)
+    means = np.array(means, dtype=dtype)
     # Add a tolerance to guard against some of the importance_weights exceeding
     # the theoretical maximum (importance_maxima) due to numerical inaccuracies
     # while lower bounding the determinant. See corresponding comment in
@@ -106,36 +119,58 @@ class LKJTest(test.TestCase):
     high_tolerance = 1e-6
 
     testee_lkj = tfd.LKJ(
-        dimension=dim, concentration=concentration, validate_args=True)
+        dimension=dim,
+        concentration=concentration,
+        input_output_cholesky=input_output_cholesky,
+        validate_args=True)
     x = testee_lkj.sample(num_samples, seed=seed)
     importance_weights = (
-        tf.exp(-testee_lkj.log_prob(x)) * _det_ok_mask(x, det_bounds))
+        tf.exp(-testee_lkj.log_prob(x)) * _det_ok_mask(x, det_bounds,
+                                                       input_output_cholesky))
     importance_maxima = (1. / det_bounds) ** (concentration - 1) * tf.exp(
         testee_lkj._log_normalization())
 
     chk1 = st.assert_true_mean_equal_by_dkwm(
         importance_weights, low=0., high=importance_maxima + high_tolerance,
         expected=means, false_fail_rate=1e-6)
-    chk2 = tf.assert_less(
+    chk2 = tf.compat.v1.assert_less(
         st.min_discrepancy_of_true_means_detectable_by_dkwm(
-            num_samples, low=0., high=importance_maxima + high_tolerance,
-            false_fail_rate=1e-6, false_pass_rate=1e-6),
-        target_discrepancy)
+            num_samples,
+            low=0.,
+            high=importance_maxima + high_tolerance,
+            false_fail_rate=1e-6,
+            false_pass_rate=1e-6), dtype(target_discrepancy))
     self.evaluate([chk1, chk2])
 
-  def testSampleConsistentLogProb2(self):
+  def testSampleConsistentLogProb2(self, dtype):
     concentrations = np.array([
         1.00, 1.30, 1.50, 1.70, 1.90, 2.00, 2.10, 2.50, 3.00])
     det_bounds = np.array([
         0.01, 0.25, 0.30, 0.40, 0.50, 0.50, 0.50, 0.70, 0.70])
     exact_volumes = 2 * np.sqrt(1. - det_bounds)
-    return self._testSampleLogProbExact(
-        concentrations, det_bounds, 2, exact_volumes,
-        num_samples=int(1.1e5), target_discrepancy=0.05, seed=41)
 
-  def _testSampleConsistentLogProbInterval(
-      self, concentrations, det_bounds, dim, num_samples=int(1e5),
-      false_fail_rate=1e-6, target_discrepancy=0.1, seed=42):
+    for input_output_cholesky in [True, False]:
+      self._testSampleLogProbExact(
+          concentrations,
+          det_bounds,
+          2,
+          exact_volumes,
+          num_samples=int(1.1e5),
+          dtype=dtype,
+          input_output_cholesky=input_output_cholesky,
+          target_discrepancy=0.05,
+          seed=tfp_test_util.test_seed())
+
+  def _testSampleConsistentLogProbInterval(self,
+                                           concentrations,
+                                           det_bounds,
+                                           dim,
+                                           num_samples=int(1e5),
+                                           dtype=np.float32,
+                                           input_output_cholesky=False,
+                                           false_fail_rate=1e-6,
+                                           target_discrepancy=0.1,
+                                           seed=42):
     # Consider the set M of dim x dim correlation matrices whose
     # determinant exceeds some bound (rationale for bound forthwith).
     # - This is a (convex!) shape in dim * (dim - 1) / 2 dimensions
@@ -177,10 +212,10 @@ class LKJTest(test.TestCase):
     #   the others uncorrelated.
     #   - Same cons, except that there is a determinant bound (which
     #     felt pretty loose).
-    lows = [volume_bounds[dim][db][0] for db in det_bounds]
-    highs = [volume_bounds[dim][db][1] for db in det_bounds]
-    concentration = np.array(concentrations, dtype=np.float32)
-    det_bounds = np.array(det_bounds, dtype=np.float32)
+    lows = [dtype(volume_bounds[dim][db][0]) for db in det_bounds]
+    highs = [dtype(volume_bounds[dim][db][1]) for db in det_bounds]
+    concentration = np.array(concentrations, dtype=dtype)
+    det_bounds = np.array(det_bounds, dtype=dtype)
     # Due to possible numerical inaccuracies while lower bounding the
     # determinant, the maximum of the importance weights may exceed the
     # theoretical maximum (importance_maxima). We add a tolerance to guard
@@ -189,10 +224,14 @@ class LKJTest(test.TestCase):
     high_tolerance = 1e-6
 
     testee_lkj = tfd.LKJ(
-        dimension=dim, concentration=concentration, validate_args=True)
+        dimension=dim,
+        concentration=concentration,
+        input_output_cholesky=input_output_cholesky,
+        validate_args=True)
     x = testee_lkj.sample(num_samples, seed=seed)
     importance_weights = (
-        tf.exp(-testee_lkj.log_prob(x)) * _det_ok_mask(x, det_bounds))
+        tf.exp(-testee_lkj.log_prob(x)) * _det_ok_mask(x, det_bounds,
+                                                       input_output_cholesky))
     importance_maxima = (1. / det_bounds) ** (concentration - 1) * tf.exp(
         testee_lkj._log_normalization())
     check1 = st.assert_true_mean_in_interval_by_dkwm(
@@ -202,16 +241,16 @@ class LKJTest(test.TestCase):
         expected_low=lows,
         expected_high=highs,
         false_fail_rate=false_fail_rate)
-    check2 = tf.assert_less(
+    check2 = tf.compat.v1.assert_less(
         st.min_discrepancy_of_true_means_detectable_by_dkwm(
             num_samples,
             low=0.,
             high=importance_maxima + high_tolerance,
             false_fail_rate=false_fail_rate,
-            false_pass_rate=false_fail_rate), target_discrepancy)
+            false_pass_rate=false_fail_rate), dtype(target_discrepancy))
     self.evaluate([check1, check2])
 
-  def testSampleConsistentLogProbInterval3(self):
+  def testSampleConsistentLogProbInterval3(self, dtype):
     # The hardcoded volume boundaries are (5e-7)-confidence intervals
     # of a rejection sampling run.  Ergo, I only have 5e-7 probability
     # mass left for the false fail rate of the test so the aggregate
@@ -220,11 +259,19 @@ class LKJTest(test.TestCase):
         1.00, 1.30, 1.50, 1.70, 1.90, 2.00, 2.10, 2.50, 3.00]
     det_bounds = [
         0.01, 0.25, 0.25, 0.30, 0.35, 0.35, 0.35, 0.40, 0.45]
-    return self._testSampleConsistentLogProbInterval(
-        concentrations, det_bounds, 3, false_fail_rate=5e-7,
-        target_discrepancy=0.11, seed=40)
 
-  def testSampleConsistentLogProbInterval4(self):
+    for input_output_cholesky in [True, False]:
+      self._testSampleConsistentLogProbInterval(
+          concentrations,
+          det_bounds,
+          3,
+          dtype=dtype,
+          input_output_cholesky=input_output_cholesky,
+          false_fail_rate=5e-7,
+          target_discrepancy=0.11,
+          seed=tfp_test_util.test_seed())
+
+  def testSampleConsistentLogProbInterval4(self, dtype):
     # The hardcoded volume boundaries are (5e-7)-confidence intervals
     # of a rejection sampling run.  Ergo, I only have 5e-7 probability
     # mass left for the false fail rate of the test so the aggregate
@@ -233,11 +280,18 @@ class LKJTest(test.TestCase):
         1.00, 1.30, 1.50, 1.70, 1.90, 2.00, 2.10, 2.50, 3.00]
     det_bounds = [
         0.01, 0.25, 0.25, 0.30, 0.35, 0.35, 0.35, 0.40, 0.45]
-    return self._testSampleConsistentLogProbInterval(
-        concentrations, det_bounds, 4, false_fail_rate=5e-7,
-        target_discrepancy=0.22, seed=39)
+    for input_output_cholesky in [True, False]:
+      self._testSampleConsistentLogProbInterval(
+          concentrations,
+          det_bounds,
+          4,
+          dtype=dtype,
+          input_output_cholesky=input_output_cholesky,
+          false_fail_rate=5e-7,
+          target_discrepancy=0.22,
+          seed=tfp_test_util.test_seed())
 
-  def testSampleConsistentLogProbInterval5(self):
+  def testSampleConsistentLogProbInterval5(self, dtype):
     # The hardcoded volume boundaries are (5e-7)-confidence intervals
     # of a rejection sampling run.  Ergo, I only have 5e-7 probability
     # mass left for the false fail rate of the test so the aggregate
@@ -247,30 +301,37 @@ class LKJTest(test.TestCase):
     det_bounds = [
         0.01, 0.20, 0.20, 0.25, 0.30, 0.30, 0.30, 0.35, 0.40]
 
-    return self._testSampleConsistentLogProbInterval(
-        concentrations, det_bounds, 5, false_fail_rate=5e-7,
-        target_discrepancy=0.41, seed=37)
+    for input_output_cholesky in [True, False]:
+      self._testSampleConsistentLogProbInterval(
+          concentrations,
+          det_bounds,
+          5,
+          dtype=dtype,
+          input_output_cholesky=input_output_cholesky,
+          false_fail_rate=5e-7,
+          target_discrepancy=0.41,
+          seed=tfp_test_util.test_seed())
 
-  def testDimensionGuard(self):
+  def testDimensionGuard(self, dtype):
     testee_lkj = tfd.LKJ(
-        dimension=3, concentration=[1., 4.], validate_args=True)
+        dimension=3, concentration=dtype([1., 4.]), validate_args=True)
     with self.assertRaisesRegexp(ValueError, 'dimension mismatch'):
       testee_lkj.log_prob(tf.eye(4))
 
-  def testZeroDimension(self):
+  def testZeroDimension(self, dtype):
     testee_lkj = tfd.LKJ(
-        dimension=0, concentration=[1., 4.], validate_args=True)
+        dimension=0, concentration=dtype([1., 4.]), validate_args=True)
     results = testee_lkj.sample(sample_shape=[4, 3])
     self.assertEqual(results.shape, [4, 3, 2, 0, 0])
 
-  def testOneDimension(self):
+  def testOneDimension(self, dtype):
     testee_lkj = tfd.LKJ(
-        dimension=1, concentration=[1., 4.], validate_args=True)
+        dimension=1, concentration=dtype([1., 4.]), validate_args=True)
     results = testee_lkj.sample(sample_shape=[4, 3])
     self.assertEqual(results.shape, [4, 3, 2, 1, 1])
 
-  def testMean(self):
-    testee_lkj = tfd.LKJ(dimension=3, concentration=[1., 3., 5.])
+  def testMean(self, dtype):
+    testee_lkj = tfd.LKJ(dimension=3, concentration=dtype([1., 3., 5.]))
     num_samples = 20000
     results = testee_lkj.sample(sample_shape=[num_samples])
     mean = testee_lkj.mean()
@@ -279,9 +340,11 @@ class LKJTest(test.TestCase):
         samples=results, low=-1., high=1.,
         expected=mean,
         false_fail_rate=1e-6)
-    check2 = tf.assert_less(
+    check2 = tf.compat.v1.assert_less(
         st.min_discrepancy_of_true_means_detectable_by_dkwm(
-            num_samples, low=-1., high=1.,
+            num_samples,
+            low=-1.,
+            high=1.,
             # Smaller false fail rate because of different batch sizes between
             # these two checks.
             false_fail_rate=1e-7,
@@ -291,16 +354,18 @@ class LKJTest(test.TestCase):
     self.evaluate([check1, check2])
 
 
-class LKJTestGraphOnly(test.TestCase):
+class LKJTestGraphOnly(tf.test.TestCase):
 
   def testDimensionGuardDynamicShape(self):
+    if tf.executing_eagerly():
+      return
     testee_lkj = tfd.LKJ(
         dimension=3, concentration=[1., 4.], validate_args=True)
     with self.assertRaisesOpError('dimension mismatch'):
       self.evaluate(
           testee_lkj.log_prob(
-              tf.placeholder_with_default(tf.eye(4), shape=None)))
+              tf.compat.v1.placeholder_with_default(tf.eye(4), shape=None)))
 
 
 if __name__ == '__main__':
-  test.main()
+  tf.test.main()

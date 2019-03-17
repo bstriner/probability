@@ -23,16 +23,22 @@ from tensorflow_probability.python.positive_semidefinite_kernels.exponentiated_q
 from tensorflow_probability.python.positive_semidefinite_kernels.matern import MaternFiveHalves
 from tensorflow_probability.python.positive_semidefinite_kernels.matern import MaternOneHalf
 from tensorflow_probability.python.positive_semidefinite_kernels.matern import MaternThreeHalves
+from tensorflow_probability.python.positive_semidefinite_kernels.polynomial import Linear
+from tensorflow_probability.python.positive_semidefinite_kernels.polynomial import Polynomial
 from tensorflow_probability.python.positive_semidefinite_kernels.positive_semidefinite_kernel import PositiveSemidefiniteKernel
+from tensorflow_probability.python.positive_semidefinite_kernels.rational_quadratic import RationalQuadratic
 
 from tensorflow.python.util.all_util import remove_undocumented
 
 _allowed_symbols = [
     'ExponentiatedQuadratic',
     'ExpSinSquared',
+    'Linear',
     'MaternFiveHalves',
     'MaternOneHalf',
     'MaternThreeHalves',
+    'Polynomial',
+    'RationalQuadratic',
     'PositiveSemidefiniteKernel',
 ]
 

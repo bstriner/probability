@@ -18,10 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import tensorflow as tf
-
-from tensorflow.contrib import framework as contrib_framework
 
 
 __all__ = [
@@ -32,12 +29,12 @@ __all__ = [
 def common_dtype(args_list, preferred_dtype=None):
   """Returns explict dtype from `args_list` if there is one."""
   dtype = None
+  # Make a copy so as to not modify arguments.
+  args_list = list(args_list)
   while args_list:
     a = args_list.pop()
-    if isinstance(a, (np.ndarray, np.generic)):
-      dt = a.dtype.type
-    elif contrib_framework.is_tensor(a):
-      dt = a.dtype.base_dtype.as_numpy_dtype
+    if hasattr(a, 'dtype'):
+      dt = tf.as_dtype(getattr(a, 'dtype')).base_dtype.as_numpy_dtype
     else:
       if isinstance(a, list):
         # Allows for nested types, e.g. Normal([np.float16(1.0)], [2.0])

@@ -15,6 +15,8 @@
 # Description:
 #   MCMC methods, diagnostics, and related utilities.
 
+# [internal] load python3.bzl
+
 package(
     default_visibility = [
         "//tensorflow_probability:__subpackages__",
@@ -52,12 +54,13 @@ py_library(
     deps = [
         # numpy dep,
         # tensorflow dep,
+        "//tensorflow_probability/python/stats",
     ],
 )
 
 py_test(
     name = "diagnostic_test",
-    size = "small",
+    size = "medium",
     srcs = ["diagnostic_test.py"],
     deps = [
         # numpy dep,
@@ -82,9 +85,9 @@ py_library(
 py_test(
     name = "hmc_test",
     size = "medium",
+    timeout = "long",
     srcs = ["hmc_test.py"],
     shard_count = 6,
-    tags = ["notap"],
     deps = [
         # numpy dep,
         # scipy dep,
@@ -108,6 +111,7 @@ py_library(
 py_test(
     name = "langevin_test",
     size = "medium",
+    timeout = "long",
     srcs = ["langevin_test.py"],
     deps = [
         # numpy dep,
@@ -128,18 +132,6 @@ py_library(
 py_library(
     name = "metropolis_hastings",
     srcs = ["metropolis_hastings.py"],
-    srcs_version = "PY2AND3",
-    deps = [
-        ":kernel",
-        ":util",
-        # numpy dep,
-        # tensorflow dep,
-    ],
-)
-
-py_library(
-    name = "replica_exchange_mc",
-    srcs = ["replica_exchange_mc.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":kernel",
@@ -174,8 +166,33 @@ py_library(
 
 py_test(
     name = "random_walk_metropolis_test",
-    size = "small",
+    size = "medium",
     srcs = ["random_walk_metropolis_test.py"],
+    deps = [
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+    ],
+)
+
+py_library(
+    name = "replica_exchange_mc",
+    srcs = ["replica_exchange_mc.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":kernel",
+        ":util",
+        # numpy dep,
+        # tensorflow dep,
+    ],
+)
+
+py_test(
+    name = "replica_exchange_mc_test",
+    size = "medium",
+    timeout = "long",
+    srcs = ["replica_exchange_mc_test.py"],
+    shard_count = 6,
     deps = [
         # numpy dep,
         # tensorflow dep,
@@ -197,6 +214,7 @@ py_library(
 py_test(
     name = "sample_test",
     size = "medium",
+    timeout = "long",
     srcs = ["sample_test.py"],
     deps = [
         # numpy dep,
@@ -240,11 +258,13 @@ py_library(
 py_test(
     name = "sample_halton_sequence_test",
     size = "medium",
+    timeout = "long",
     srcs = ["sample_halton_sequence_test.py"],
     deps = [
         # numpy dep,
         # tensorflow dep,
         "//tensorflow_probability",
+        "//tensorflow_probability/python/internal:monte_carlo",
     ],
 )
 
@@ -274,6 +294,7 @@ py_test(
     size = "medium",
     timeout = "long",
     srcs = ["slice_sampler_test.py"],
+    shard_count = 6,
     deps = [
         ":slice_sampler_utils",
         # numpy dep,
@@ -297,7 +318,9 @@ py_library(
 py_test(
     name = "transformed_kernel_test",
     size = "medium",
+    timeout = "long",
     srcs = ["transformed_kernel_test.py"],
+    shard_count = 4,
     deps = [
         # numpy dep,
         # tensorflow dep,
@@ -354,6 +377,40 @@ py_test(
     srcs = ["eight_schools_hmc_graph_test.py"],
     deps = [
         ":eight_schools_hmc",
+        # tensorflow dep,
+        "//tensorflow_probability",
+    ],
+)
+
+py_library(
+    name = "text_messages_hmc",
+    srcs = ["text_messages_hmc.py"],
+    deps = [
+        # numpy dep,
+        # tensorflow dep,
+        "//tensorflow_probability",
+    ],
+)
+
+# bazel run -c opt :text_messages_hmc_eager_test -- --benchmarks=.
+py_test(
+    name = "text_messages_hmc_eager_test",
+    size = "medium",  # Might run > 1 minute.
+    srcs = ["text_messages_hmc_eager_test.py"],
+    deps = [
+        ":text_messages_hmc",
+        # tensorflow dep,
+        "//tensorflow_probability",
+    ],
+)
+
+# bazel run -c opt :text_messages_hmc_graph_test -- --benchmarks=.
+py_test(
+    name = "text_messages_hmc_graph_test",
+    size = "medium",  # Might run > 1 minute.
+    srcs = ["text_messages_hmc_graph_test.py"],
+    deps = [
+        ":text_messages_hmc",
         # tensorflow dep,
         "//tensorflow_probability",
     ],

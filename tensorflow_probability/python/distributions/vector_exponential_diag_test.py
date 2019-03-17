@@ -23,7 +23,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.python.framework import test_util
+from tensorflow_probability.python.internal import test_util as tfp_test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 tfd = tfp.distributions
 
@@ -45,7 +46,7 @@ class VectorExponentialDiagTest(tf.test.TestCase):
     mu = [-1.]
     diag = [-5.]
     dist = tfd.VectorExponentialDiag(mu, diag, validate_args=True)
-    self.assertAllEqual([3, 1], dist.sample(3).get_shape())
+    self.assertAllEqual([3, 1], dist.sample(3).shape)
 
   def testMean(self):
     mu = [-1., 1]
@@ -69,8 +70,8 @@ class VectorExponentialDiagTest(tf.test.TestCase):
     mu = [-2., 1]
     diag = [1., -2]
     dist = tfd.VectorExponentialDiag(mu, diag, validate_args=True)
-    samps = self.evaluate(dist.sample(int(1e4), seed=0))
-    cov_mat = self.evaluate(tf.matrix_diag(diag))**2
+    samps = self.evaluate(dist.sample(int(1e4), seed=tfp_test_util.test_seed()))
+    cov_mat = self.evaluate(tf.linalg.diag(diag))**2
 
     self.assertAllClose(
         [-2 + 1, 1. - 2], samps.mean(axis=0), atol=0., rtol=0.05)
@@ -93,13 +94,13 @@ class VectorExponentialDiagTest(tf.test.TestCase):
     dist = tfd.VectorExponentialDiag(mu, diag, validate_args=True)
 
     mean = dist.mean()
-    self.assertAllEqual([2, 3], mean.get_shape())
+    self.assertAllEqual([2, 3], mean.shape)
     self.assertAllClose(mu + diag, self.evaluate(mean))
 
     n = int(1e4)
-    samps = self.evaluate(dist.sample(n, seed=0))
+    samps = self.evaluate(dist.sample(n, seed=tfp_test_util.test_seed()))
     samps_centered = samps - samps.mean(axis=0)
-    cov_mat = self.evaluate(tf.matrix_diag(diag))**2
+    cov_mat = self.evaluate(tf.linalg.diag(diag))**2
     sample_cov = np.matmul(
         samps_centered.transpose([1, 2, 0]), samps_centered.transpose([1, 0, 2
                                                                       ])) / n

@@ -40,10 +40,11 @@ class Sigmoid(bijector.Bijector):
     return tf.sigmoid(x)
 
   def _inverse(self, y):
-    return tf.log(y) - tf.log1p(-y)
+    return tf.math.log(y) - tf.math.log1p(-y)
 
-  def _inverse_log_det_jacobian(self, y):
-    return -tf.log(y) - tf.log1p(-y)
+  # We implicitly rely on _forward_log_det_jacobian rather than explicitly
+  # implement _inverse_log_det_jacobian since directly using
+  # `-tf.log(y) - tf.log1p(-y)` has lower numerical precision.
 
   def _forward_log_det_jacobian(self, x):
     return -tf.nn.softplus(-x) - tf.nn.softplus(x)

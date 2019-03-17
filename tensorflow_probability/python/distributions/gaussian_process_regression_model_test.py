@@ -23,8 +23,7 @@ import tensorflow as tf
 from tensorflow_probability.python import distributions as tfd
 from tensorflow_probability.python import positive_semidefinite_kernels as psd_kernels
 
-from tensorflow.python.framework import tensor_util
-from tensorflow.python.framework import test_util
+from tensorflow.python.framework import test_util  # pylint: disable=g-direct-tensorflow-import,g-import-not-at-top
 
 
 def _np_kernel_matrix_fn(amp, len_scale, x, y):
@@ -58,14 +57,16 @@ class _GaussianProcessRegressionModelTest(object):
     observations = np.random.uniform(-1., 1., (3, 7)).astype(np.float64)
 
     if not self.is_static:
-      amplitude = tf.placeholder_with_default(amplitude, shape=None)
-      length_scale = tf.placeholder_with_default(length_scale, shape=None)
-      batched_index_points = tf.placeholder_with_default(
+      amplitude = tf.compat.v1.placeholder_with_default(amplitude, shape=None)
+      length_scale = tf.compat.v1.placeholder_with_default(
+          length_scale, shape=None)
+      batched_index_points = tf.compat.v1.placeholder_with_default(
           batched_index_points, shape=None)
 
-      observation_index_points = tf.placeholder_with_default(
+      observation_index_points = tf.compat.v1.placeholder_with_default(
           observation_index_points, shape=None)
-      observations = tf.placeholder_with_default(observations, shape=None)
+      observations = tf.compat.v1.placeholder_with_default(
+          observations, shape=None)
 
     kernel = psd_kernels.ExponentiatedQuadratic(amplitude, length_scale)
 
@@ -100,7 +101,7 @@ class _GaussianProcessRegressionModelTest(object):
       self.assertIsNone(samples.shape.ndims)
       self.assertIsNone(gprm.batch_shape.ndims)
       self.assertEqual(gprm.event_shape.ndims, 1)
-      self.assertIsNone(gprm.event_shape.dims[0].value)
+      self.assertIsNone(tf.compat.dimension_value(gprm.event_shape.dims[0]))
 
   def testMeanVarianceAndCovariance(self):
     amp = np.float64(.5)
@@ -132,8 +133,10 @@ class _GaussianProcessRegressionModelTest(object):
 
     mean_fn = lambda x: x[:, 0]**2
     prior_mean = mean_fn(observation_index_points)
-    expected_mean = np.dot(
-        k_xn_, np.linalg.solve(k_nn_plus_noise_, observations - prior_mean))
+    expected_mean = (
+        mean_fn(index_points) +
+        np.dot(k_xn_,
+               np.linalg.solve(k_nn_plus_noise_, observations - prior_mean)))
 
     kernel = psd_kernels.ExponentiatedQuadratic(amp, len_scale)
     gprm = tfd.GaussianProcessRegressionModel(
@@ -266,14 +269,18 @@ class _GaussianProcessRegressionModelTest(object):
 
     # ==> shape = [6, 25, 2]
     if not self.is_static:
-      index_points_1 = tf.placeholder_with_default(index_points_1, shape=None)
-      index_points_2 = tf.placeholder_with_default(index_points_2, shape=None)
-      observation_index_points_1 = tf.placeholder_with_default(
+      index_points_1 = tf.compat.v1.placeholder_with_default(
+          index_points_1, shape=None)
+      index_points_2 = tf.compat.v1.placeholder_with_default(
+          index_points_2, shape=None)
+      observation_index_points_1 = tf.compat.v1.placeholder_with_default(
           observation_index_points_1, shape=None)
-      observation_index_points_2 = tf.placeholder_with_default(
+      observation_index_points_2 = tf.compat.v1.placeholder_with_default(
           observation_index_points_2, shape=None)
-      observations_1 = tf.placeholder_with_default(observations_1, shape=None)
-      observations_2 = tf.placeholder_with_default(observations_2, shape=None)
+      observations_1 = tf.compat.v1.placeholder_with_default(
+          observations_1, shape=None)
+      observations_2 = tf.compat.v1.placeholder_with_default(
+          observations_2, shape=None)
 
     mean_fn = lambda x: np.array([0.], np.float32)
     kernel_1 = psd_kernels.ExponentiatedQuadratic()
@@ -305,8 +312,8 @@ class _GaussianProcessRegressionModelTest(object):
       self.assertAllEqual(gprm2.event_shape, event_shape_2)
       self.assertAllEqual(gprm1.index_points, index_points_1)
       self.assertAllEqual(gprm2.index_points, index_points_2)
-      self.assertAllEqual(tensor_util.constant_value(gprm1.jitter),
-                          tensor_util.constant_value(gprm2.jitter))
+      self.assertAllEqual(
+          tf.get_static_value(gprm1.jitter), tf.get_static_value(gprm2.jitter))
     else:
       self.assertAllEqual(self.evaluate(gprm1.batch_shape_tensor()),
                           self.evaluate(gprm2.batch_shape_tensor()))

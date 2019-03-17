@@ -24,8 +24,6 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from tensorflow.contrib import eager as tfe
-
 tfd = tfp.distributions
 
 
@@ -86,8 +84,10 @@ def benchmark_eight_schools_hmc(
         treatment_effects, treatment_stddevs,
         avg_effect, avg_stddev, school_effects_standard)
 
-  sample_chain = tfe.defun(tfp.mcmc.sample_chain)
-  executing_eagerly = tf.executing_eagerly()
+  if tf.executing_eagerly():
+    sample_chain = tf.function(tfp.mcmc.sample_chain)
+  else:
+    sample_chain = tfp.mcmc.sample_chain
 
   def computation():
     """The benchmark computation."""
@@ -106,14 +106,15 @@ def benchmark_eight_schools_hmc(
 
     return kernel_results.is_accepted
 
-  # warm-up
+  # Let's force evaluation of graph to ensure build time is not part of our time
+  # trial.
   is_accepted_tensor = computation()
-  if not executing_eagerly:
-    session = tf.Session()
+  if not tf.executing_eagerly():
+    session = tf.compat.v1.Session()
     session.run(is_accepted_tensor)
 
   start_time = time.time()
-  if executing_eagerly:
+  if tf.executing_eagerly():
     is_accepted = computation()
   else:
     is_accepted = session.run(is_accepted_tensor)
@@ -132,29 +133,29 @@ class EightSchoolsHmcBenchmarkTestHarness(object):
   """Test harness for running HMC benchmark tests in graph/eager modes."""
 
   def __init__(self):
-    self._mode = 'eager' if tfe.executing_eagerly() else 'graph'
+    self._mode = 'eager' if tf.executing_eagerly() else 'graph'
 
   def benchmark_eight_schools_hmc_num_leapfrog_1(self):
     self.report_benchmark(
-        name=self._mode + '_eight_hmc_schools_num_leapfrog_1',
+        name=self._mode + '_eight_schools_hmc_num_leapfrog_1',
         **benchmark_eight_schools_hmc(num_leapfrog_steps=1))
 
   def benchmark_eight_schools_hmc_num_leapfrog_2(self):
     self.report_benchmark(
-        name=self._mode + '_eight_hmc_schools_num_leapfrog_2',
+        name=self._mode + '_eight_schools_hmc_num_leapfrog_2',
         **benchmark_eight_schools_hmc(num_leapfrog_steps=2))
 
   def benchmark_eight_schools_hmc_num_leapfrog_3(self):
     self.report_benchmark(
-        name=self._mode + '_eight_hmc_schools_num_leapfrog_3',
+        name=self._mode + '_eight_schools_hmc_num_leapfrog_3',
         **benchmark_eight_schools_hmc(num_leapfrog_steps=3))
 
   def benchmark_eight_schools_hmc_num_leapfrog_10(self):
     self.report_benchmark(
-        name=self._mode + '_eight_hmc_schools_num_leapfrog_10',
+        name=self._mode + '_eight_schools_hmc_num_leapfrog_10',
         **benchmark_eight_schools_hmc(num_leapfrog_steps=10))
 
   def benchmark_eight_schools_hmc_num_leapfrog_20(self):
     self.report_benchmark(
-        name=self._mode + '_eight_hmc_schools_num_leapfrog_20',
+        name=self._mode + '_eight_schools_hmc_num_leapfrog_20',
         **benchmark_eight_schools_hmc(num_leapfrog_steps=20))
